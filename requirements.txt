@@ -1,2 +1,6 @@
 python-dotenv
-asyncio-mcp-client
+fastapi
+uvicorn[standard]
+requests
+google-generativeai
+pydantic

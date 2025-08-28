@@ -28,9 +28,7 @@ class WebScoutMCPClient:
 
         if self.docker_mode:
             # Docker mode: Use HTTP REST API
-            web_scout_host = os.getenv('WEB_SCOUT_HOST', 'web-scout')
-            web_scout_port = int(os.getenv('WEB_SCOUT_PORT', '8000'))
-            self.http_base_url = f"http://{web_scout_host}:{web_scout_port}"
+            self.http_base_url = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
             self.session = requests.Session()
         else:
             # Local mode: Use direct MCP process
@@ -137,38 +135,32 @@ class WebScoutMCPClient:
             if self.docker_mode:
                 # HTTP mode - convert MCP request to HTTP request
                 if request['method'] == 'tools/list':
-                    # Get tools info directly from /health endpoint (simplified)
-                    response = self.session.get(f"{self.http_base_url}/health", timeout=10)
-                    if response.status_code == 200:
-                        return {
-                            'jsonrpc': '2.0',
-                            'id': request['id'],
-                            'result': {
-                                'tools': [
-                                    {
-                                        'name': 'web_search',
-                                        'description': 'Perform a web search using DuckDuckGo and generate AI-powered summaries',
-                                        'inputSchema': {
-                                            'type': 'object',
-                                            'properties': {
-                                                'query': {'type': 'string', 'description': 'The search query to perform'},
-                                                'mode': {
-                                                    'type': 'string',
-                                                    'enum': ['summary', 'detailed'],
-                                                    'description': 'Response mode',
-                                                    'default': 'summary'
-                                                }
-                                            },
-                                            'required': ['query']
-                                        }
-                                    }
-                                ]
-                            }
+                    # Get tools info from /tools endpoint
+                    try:
+                        response = self.session.get(f"{self.http_base_url}/tools", timeout=10)
+                        if response.status_code == 200:
+                            return response.json()
+                        else:
+                            return {'error': {'code': response.status_code, 'message': f'HTTP {response.status_code}: {response.text}'}}
+                    except requests.exceptions.RequestException as e:
+                        return {'error': {'code': -32000, 'message': f'Cannot connect to server: {e}'}}
+                elif request['method'] == 'tools/call':
+                    # Handle tool calls via HTTP
+                    try:
+                        params = request.get('params', {})
+                        tool_params = {
+                            'name': params.get('name'),
+                            'arguments': params.get('arguments', {})
                         }
-                    else:
-                        return {'error': {'code': -32000, 'message': 'Server not available'}}
+                        response = self.session.post(f"{self.http_base_url}/tools/call", json=tool_params, timeout=30)
+                        if response.status_code == 200:
+                            return response.json()
+                        else:
+                            return {'error': {'code': response.status_code, 'message': f'HTTP {response.status_code}: {response.text}'}}
+                    except requests.exceptions.RequestException as e:
+                        return {'error': {'code': -32000, 'message': f'Tool call failed: {e}'}}
                 else:
-                    return {'error': {'code': -32601, 'message': 'Method not supported in Docker mode'}}
+                    return {'error': {'code': -32601, 'message': f'Method {request["method"]} not supported in Docker mode'}}
             else:
                 # Local MCP mode
                 request_json = json.dumps(request) + '\n'
@@ -268,7 +260,8 @@ class WebSearchTool:
         """Initialize the client connection."""
         success = await self.client.start()
         if not success:
-            raise Exception("Failed to initialize Web-Scout connection")
+            print("Failed to initialize Web-Scout connection")
+            return False
         return True
 
     async def search(self, query: str, mode: str = "summary") -> dict:

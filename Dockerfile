@@ -13,18 +13,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the content of the local directory to the working directory
 COPY main.py .
 COPY mcp_client.py .
+COPY chatbot.py .
+COPY http_server.py .
 
 # Copy environment file if it exists
 COPY .env* ./
 
-# Copy Web-Scout as a dependency (for MCP integration)
-COPY ../Web-Scout ./Web-Scout/
-
-# Make sure the Web-Scout directory is accessible
-RUN chmod +x ./Web-Scout/mcp_server.py
-
-# Expose port 8001 for Lily-Core (different from Web-Scout's 8000)
-EXPOSE 8001
+# Expose port 8000 for Lily-Core (default port for HTTP server)
+EXPOSE 8000
 
 # Set the default command to run Lily-Core
 CMD ["python", "main.py"]

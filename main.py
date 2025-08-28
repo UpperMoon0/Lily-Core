@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-Lily-Core Main Application.
+Lily-Core HTTP Server
 
-A simple application that demonstrates web search functionality through MCP.
+Main entry point for the Lily chatbot HTTP server.
+Provides AI-powered chat with intelligent web search integration.
 """
 
-import asyncio
-import sys
-from dotenv import load_dotenv
 import os
-from mcp_client import sync_web_search
+import sys
+import uvicorn
+from dotenv import load_dotenv
 
 
 def main():
-    """Main entry point for Lily-Core."""
+    """Main entry point for Lily-Core HTTP Server."""
     # Load environment variables
     load_dotenv()
 
-    print("🌸 Lily-Core - AI-Powered Web Search 🌸")
+    print("🌸 Lily-Core - AI-Powered ChatBot 🌸")
     print("=" * 50)
 
     # Check if API key is configured
@@ -30,78 +30,45 @@ def main():
 
     print("✅ Gemini API key configured")
 
-    # Interactive search mode
-    if len(sys.argv) == 1:
-        print("\n🔍 Interactive Web Search Mode")
-        print("Enter search queries (or 'quit' to exit):")
+    # Check Web-Scout configuration
+    web_scout_url = os.getenv('WEB_SCOUT_URL')
+    if not web_scout_url:
+        print("⚠️  Warning: WEB_SCOUT_URL not configured")
+        print("   Using default: http://web-scout:8000")
+    else:
+        print(f"✅ Web-Scout URL: {web_scout_url}")
 
-        while True:
-            try:
-                query = input("\nSearch: ").strip()
-                if query.lower() in ['quit', 'exit', 'q']:
-                    print("Goodbye! 🌸")
-                    break
+    # Get server configuration
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', '8000'))
 
-                if not query:
-                    continue
+    print(f"🚀 Starting HTTP server on {host}:{port}")
+    print("=" * 50)
+    print("📚 Available endpoints:")
+    print("   GET  /         - API information")
+    print("   GET  /health   - Health check")
+    print("   POST /chat     - Send chat message (JSON)")
+    print("   GET  /conversation/{user_id} - Get conversation history")
+    print("   DELETE /conversation/{user_id} - Clear conversation")
+    print("   GET  /tools    - Get available tools")
+    print("=" * 50)
+    print("💡 The chatbot will automatically decide when to use web search")
+    print("🌐 Send POST requests to /chat with: {'message': 'your message'}")
 
-                mode = input("Mode (summary/detailed) [summary]: ").strip().lower()
-                if not mode:
-                    mode = "summary"
-
-                if mode not in ["summary", "detailed"]:
-                    print("❌ Invalid mode. Use 'summary' or 'detailed'")
-                    continue
-
-                print(f"\n🔍 Searching for: '{query}'...")
-                print(f"📝 Mode: {mode}")
-                print("-" * 50)
-
-                result = sync_web_search(query, mode)
-
-                if 'error' in result:
-                    print(f"❌ Search failed: {result['error']}")
-                else:
-                    print("✅ Search Results:")
-                    print(f"Query: {result.get('query', 'N/A')}")
-                    print(f"Mode: {result.get('mode', 'N/A')}")
-                    print(f"Sources: {result.get('sources_used', 0)}")
-                    print("\n" + "=" * 50)
-                    print("📄 Summary:")
-                    print(result.get('summary', 'No summary available'))
-                    print("=" * 50)
-
-            except KeyboardInterrupt:
-                print("\n\nGoodbye! 🌸")
-                break
-            except Exception as e:
-                print(f"❌ Unexpected error: {e}")
-
-    # Command line search mode
-    elif len(sys.argv) >= 2:
-        query = sys.argv[1]
-        mode = sys.argv[2] if len(sys.argv) > 2 else "summary"
-
-        if mode not in ["summary", "detailed"]:
-            mode = "summary"
-
-        print(f"🔍 Searching for: '{query}' (mode: {mode})...")
-        print("-" * 50)
-
-        result = sync_web_search(query, mode)
-
-        if 'error' in result:
-            print(f"❌ Search failed: {result['error']}")
-            return 1
-        else:
-            print("✅ Search Results:")
-            print(f"Query: {result.get('query', 'N/A')}")
-            print(f"Mode: {result.get('mode', 'N/A')}")
-            print(f"Sources: {result.get('sources_used', 0)}")
-            print("\n" + "=" * 50)
-            print("📄 Summary:")
-            print(result.get('summary', 'No summary available'))
-            print("=" * 50)
+    try:
+        # Start the HTTP server
+        uvicorn.run(
+            "http_server:app",
+            host=host,
+            port=port,
+            reload=False,
+            log_level="info"
+        )
+    except KeyboardInterrupt:
+        print("\n\n🌸 Server stopped by user")
+    except Exception as e:
+        print(f"❌ Fatal server error: {e}")
+        return 1
 
     return 0
 
