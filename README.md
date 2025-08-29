@@ -1,17 +1,17 @@
-# 🌸 Lily-Core: AI-Powered ChatBot with MCP Protocol
+# Lily-Core: AI-Powered ChatBot with MCP Protocol
 
 A clean architecture implementation of an AI-powered chatbot that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration with Web-Scout.
 
 ## Features
 
-- 🤖 **AI ChatBot**: Powered by Google Gemini with conversation memory
-- 🌐 **Intelligent Web Search**: Context-aware web search using Web-Scout integration via MCP
-- 🔄 **Search Modes**: Configurable summary and detailed analysis modes
-- 🏗️ **Clean Architecture**: Well-structured, maintainable, and testable codebase
-- 🔧 **RESTful API**: Complete HTTP API with FastAPI
-- 📡 **MCP Protocol**: JSON-RPC communication for tool integration
-- 💾 **Persistent Storage**: Conversation history and state management
-- 🧪 **Testable Design**: Unit and integration test support
+- **AI ChatBot**: Powered by Google Gemini with conversation memory
+- **Intelligent Web Search**: Context-aware web search using Web-Scout integration via MCP
+- **Search Modes**: Configurable summary and detailed analysis modes
+- **Clean Architecture**: Well-structured, maintainable, and testable codebase
+- **RESTful API**: Complete HTTP API with FastAPI
+- **MCP Protocol**: JSON-RPC communication for tool integration
+- **Persistent Storage**: Conversation history and state management
+- **Testable Design**: Unit and integration test support
 
 ## Prerequisites
 
@@ -63,31 +63,31 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 ```
 ┌─────────────────────────────────────────────────┐
 │                Interface Adapters               │
-│  ┌─────────────────┐     ┌─────────────────┐   │
-│  │   FastAPI       │     │   Routes        │   │
-│  │   Controllers   │◄────┤   (HTTP API)    │   │
-│  │                 │     │                 │   │
-│  │ • HTTP Request  │     │ • JSON Models   │   │
-│  │   Handling      │     │ • Endpoints     │   │
-│  │ • Response      │     │ • CORS Config   │   │
-│  │   Formatting    │     │                 │   │
-│  └─────────────────┘     └─────────────────┘   │
+│  ┌─────────────────┐     ┌─────────────────┐    │
+│  │   FastAPI       │     │   Routes        │    │
+│  │   Controllers   │◄────┤   (HTTP API)    │    │
+│  │                 │     │                 │    │
+│  │ • HTTP Request  │     │ • JSON Models   │    │
+│  │   Handling      │     │ • Endpoints     │    │
+│  │ • Response      │     │ • CORS Config   │    │
+│  │   Formatting    │     │                 │    │
+│  └─────────────────┘     └─────────────────┘    │
 └─────────────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────┐
 │                 Use Cases                       │
-│  ┌─────────────────┐     ┌─────────────────┐   │
-│  │   Chat Service  │     │   Tool Service  │   │
-│  │                 │     │                 │   │
-│  │ • Conversation  │     │ • Web Search    │   │
+│  ┌─────────────────┐     ┌──────────────────┐   │
+│  │   Chat Service  │     │   Tool Service   │   │
+│  │                 │     │                  │   │
+│  │ • Conversation  │     │ • Web Search     │   │
 │  │   Orchestration │     │ • Tool Management│   │
 │  │ • Response      │     │ • Decision Logic │   │
-│  │   Generation    │     │ • Tool Calls    │   │
-│  │                 │     │                 │   │
-│  └─────────────────┘     └─────────────────┘   │
+│  │   Generation    │     │ • Tool Calls     │   │
+│  │                 │     │                  │   │
+│  └─────────────────┘     └──────────────────┘   │
 │  ┌─────────────────┐                            │
-│  │ Memory Service │                            │
+│  │ Memory Service  │                            │
 │  │                 │                            │
 │  │ • Conversation  │                            │
 │  │   Storage       │                            │
@@ -99,27 +99,27 @@ curl -X DELETE http://localhost:8000/conversation/test_user
                                  ▼
 ┌─────────────────────────────────────────────────┐
 │                 Domain Entities                 │
-│  ┌─────────────────┐     ┌─────────────────┐   │
-│  │  Models         │     │ Business Config │   │
-│  │                 │     │                 │   │
-│  │ • Message       │     │ • ChatSettings  │   │
-│  │ • Conversation  │     │ • Configuration │   │
-│  │ • API DTOs      │     │ • Core Entities │   │
-│  │ • Validation    │     │                 │   │
-│  └─────────────────┘     └─────────────────┘   │
+│  ┌─────────────────┐     ┌─────────────────┐    │
+│  │  Models         │     │ Business Config │    │
+│  │                 │     │                 │    │
+│  │ • Message       │     │ • ChatSettings  │    │
+│  │ • Conversation  │     │ • Configuration │    │
+│  │ • API DTOs      │     │ • Core Entities │    │
+│  │ • Validation    │     │                 │    │
+│  └─────────────────┘     └─────────────────┘    │
 └─────────────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────┐
 │                 External Systems                │
-│  ┌─────────────────┐     ┌─────────────────┐   │
-│  │   Web-Scout     │     │   Gemini AI     │   │
-│  │   (MCP/HTTP)    │     │                 │   │
-│  │                 │     │ • AI Model      │   │
-│  │ • Web Search    │     │ • Generation    │   │
-│  │ • Data Sources  │     │ • Context Mgmt  │   │
-│  │                 │     │                 │   │
-│  └─────────────────┘     └─────────────────┘   │
+│  ┌─────────────────┐     ┌─────────────────┐    │
+│  │   Web-Scout     │     │   Gemini AI     │    │
+│  │   (MCP/HTTP)    │     │                 │    │
+│  │                 │     │ • AI Model      │    │
+│  │ • Web Search    │     │ • Generation    │    │
+│  │ • Data Sources  │     │ • Context Mgmt  │    │
+│  │                 │     │                 │    │
+│  └─────────────────┘     └─────────────────┘    │
 └─────────────────────────────────────────────────┘
 ```
 

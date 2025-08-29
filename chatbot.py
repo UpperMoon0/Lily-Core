@@ -214,7 +214,6 @@ class ChatBot:
 
             # Determine if tool use is appropriate
             should_use_tool, reasoning = self._should_use_tool(user_message)
-            print(f"🤖 Tool decision: {should_use_tool} ({reasoning})")
 
             if should_use_tool:
                 # Use tool and incorporate results into response

@@ -12,7 +12,8 @@ import sys
 import os
 from typing import Dict, Any, Optional
 import requests
-from .core.config import config
+from dotenv import load_dotenv
+from core.config import config
 
 
 class WebScoutMCPClient:

@@ -88,7 +88,6 @@ def main():
     load_dotenv()
 
     print("🌸 Lily-Core - AI-Powered ChatBot 🌸")
-    print("🧹 Clean Architecture Edition")
     print("=" * 50)
 
     # Check if API key is configured

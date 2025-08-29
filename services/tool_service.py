@@ -363,8 +363,25 @@ class ToolService:
                 if not query:
                     return {'error': 'Query parameter is required for web search'}
 
+                # Print tool call parameters
+                print(f"\n🔧 Tool Call Parameters:")
+                print(f"  Tool: web_search")
+                print(f"  Query: {query}")
+                print(f"  Mode: {mode}")
+                print(f"  Parameters: {parameters}")
+
                 # Execute the search
                 result = await self.web_search_tool.search(query, mode)
+
+                # Print tool call result
+                print(f"\n📋 Tool Call Result:")
+                print(f"  Tool: web_search")
+                if 'error' in result:
+                    print(f"  Error: {result['error']}")
+                else:
+                    print(f"  Success: True")
+                    print(f"  Summary: {result.get('summary', '')[:100]}..." if len(str(result.get('summary', ''))) > 100 else f"  Summary: {result.get('summary', '')}")
+                    print(f"  Full result keys: {list(result.keys())}")
 
                 if 'error' in result:
                     return {'error': result['error']}
@@ -377,8 +394,14 @@ class ToolService:
                 return result
 
             except Exception as e:
+                print(f"\n❌ Tool Call Failed:")
+                print(f"  Tool: web_search")
+                print(f"  Error: {str(e)}")
                 return {'error': f'Web search failed: {str(e)}'}
         else:
+            print(f"\n⚠️ Unknown Tool Request:")
+            print(f"  Tool: {tool_name}")
+            print(f"  Error: Unknown or unavailable tool")
             return {'error': f'Unknown or unavailable tool: {tool_name}'}
 
     async def call_tool_by_name(self, tool_name: str, **kwargs) -> Dict[str, Any]:

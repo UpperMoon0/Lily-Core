@@ -82,8 +82,6 @@ class ChatService:
             # Determine if tool usage is appropriate
             should_use_tool, tool_name, reasoning = await self.tool_service.should_use_tool(message, context_str)
 
-            print(f"🤖 Tool decision: {should_use_tool} ({reasoning})")
-
             if should_use_tool:
                 # Use tool and generate response with tool results
                 response_text = await self._generate_tool_based_response(message, tool_name)
