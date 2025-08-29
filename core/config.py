@@ -29,8 +29,8 @@ class Config:
     TOP_P: float = float(os.getenv('TOP_P', '0.8'))
     MAX_OUTPUT_TOKENS: int = int(os.getenv('MAX_OUTPUT_TOKENS', '1000'))
 
-    # Web-Scout Integration
-    WEB_SCOUT_MCP_PATH: str = os.getenv('WEB_SCOUT_MCP_PATH', '../Web-Scout/mcp_server.py')
+        # Web-Scout Integration
+    WEB_SCOUT_URL: str = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
 
     def __init__(self):
         """Validate configuration on initialization."""

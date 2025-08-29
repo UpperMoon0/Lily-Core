@@ -3,33 +3,28 @@
 MCP Client for Lily-Core.
 
 This client connects to the Web-Scout MCP server to perform web searches.
-Always uses JSON-RPC MCP protocol via subprocess communication.
+Uses JSON-RPC MCP protocol over HTTP for distributed deployment.
 """
 
 import asyncio
 import json
-import subprocess
 import sys
 import os
 from typing import Dict, Any, Optional
-import threading
-import time
-import signal
-from dotenv import load_dotenv
-
+import requests
 from .core.config import config
 
 
 class WebScoutMCPClient:
-    """Client for Web-Scout MCP server using JSON-RPC protocol."""
+    """Client for Web-Scout MCP server using JSON-RPC over HTTP."""
 
     def __init__(self):
-        # Always use MCP protocol via subprocess
-        self.web_scout_path = config.WEB_SCOUT_MCP_PATH
-        self.gemini_api_key = config.GEMINI_API_KEY
-        self.process = None
+        # Use MCP over HTTP to Web-Scout
+        self.web_scout_url = config.WEB_SCOUT_URL
+        self.mcp_url = f"{self.web_scout_url}/mcp"
+        self.session = requests.Session()
         self.request_id = 0
-        self.response_queue = asyncio.Queue()
+</search_and_replace>
 
     def _get_next_id(self) -> str:
         """Get next request ID."""
@@ -37,93 +32,37 @@ class WebScoutMCPClient:
         return str(self.request_id)
 
     async def start(self):
-        """Start the MCP connection."""
-        # Start local MCP process
-        return await self._start_local_process()
-
-    async def _start_local_process(self):
-        """Start the local MCP server process."""
+        """Start the HTTP MCP connection."""
         try:
-            if not self.gemini_api_key:
-                raise ValueError("GEMINI_API_KEY not provided for local MCP mode")
-
-            env = os.environ.copy()
-            env['GEMINI_API_KEY'] = self.gemini_api_key
-
-            # Start the MCP server as a subprocess
-            self.process = subprocess.Popen(
-                [sys.executable, self.web_scout_path, "--mcp"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env
-            )
-
-            # Start a thread to read responses
-            response_thread = threading.Thread(target=self._read_responses)
-            response_thread.daemon = True
-            response_thread.start()
-
-            # Wait a moment for the server to start
-            await asyncio.sleep(2)
-
-            # Initialize the MCP connection
-            init_response = await self._send_request({
-                'jsonrpc': '2.0',
-                'id': self._get_next_id(),
-                'method': 'initialize',
-                'params': {}
-            })
-
-            if init_response.get('error'):
-                raise Exception(f"MCP initialization failed: {init_response['error']['message']}")
-
-            print("Local MCP client initialized successfully")
-            return True
-
-        except Exception as e:
-            print(f"Failed to start local MCP client: {e}")
+            # Test HTTP connection to MCP endpoint
+            response = self.session.get(f"{self.web_scout_url}/health", timeout=5)
+            if response.status_code == 200:
+                print(f"Web-Scout MCP server is healthy at {self.web_scout_url}")
+                return True
+            else:
+                print(f"Web-Scout server returned status {response.status_code}")
+                return False
+        except requests.exceptions.RequestException as e:
+            print(f"Cannot connect to Web-Scout MCP server: {e}")
             return False
 
-    def _read_responses(self):
-        """Read responses from the local MCP server."""
-        try:
-            while self.process and not self.process.poll():
-                line = self.process.stdout.readline()
-                if not line:
-                    break
-
-                line = line.strip()
-                if line:
-                    try:
-                        response = json.loads(line)
-                        asyncio.run_coroutine_threadsafe(
-                            self.response_queue.put(response),
-                            asyncio.get_event_loop()
-                        )
-                    except json.JSONDecodeError as e:
-                        print(f"Invalid JSON response from MCP server: {e}")
-
-        except Exception as e:
-            print(f"Error reading MCP responses: {e}")
-
     async def _send_request(self, request: dict) -> dict:
-        """Send a request to the MCP server."""
+        """Send MCP request over HTTP."""
         try:
-            # MCP mode - send request via subprocess
-            request_json = json.dumps(request) + '\n'
-            self.process.stdin.write(request_json)
-            self.process.stdin.flush()
-
-            response = await asyncio.wait_for(
-                self.response_queue.get(),
+            # Send JSON-RPC over HTTP
+            response = self.session.post(
+                self.mcp_url,
+                json=request,
                 timeout=30.0
             )
-            return response
 
-        except asyncio.TimeoutError:
-            return {'error': {'code': -32000, 'message': 'Request timeout'}}
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {'error': {'code': response.status_code, 'message': f'HTTP {response.status_code}: {response.text}'}}
+
+        except requests.exceptions.RequestException as e:
+            return {'error': {'code': -32000, 'message': f'Request failed: {e}'}}
         except Exception as e:
             return {'error': {'code': -32000, 'message': str(e)}}
 
@@ -169,28 +108,39 @@ class WebScoutMCPClient:
         except Exception as e:
             return {"error": f"Web search error: {str(e)}"}
 
-    async def stop(self):
-        """Stop the connection."""
-        if self.process:
-            try:
-                self.process.terminate()
-                await asyncio.wait_for(self._wait_pid(), timeout=5.0)
-            except asyncio.TimeoutError:
-                self.process.kill()
-            except Exception as e:
-                print(f"Error stopping MCP process: {e}")
+    async def list_tools(self) -> dict:
+        """Fetch available tools from MCP server."""
+        try:
+            tools_response = await self._send_request({
+                'jsonrpc': '2.0',
+                'id': self._get_next_id(),
+                'method': 'tools/list'
+            })
 
-    async def _wait_pid(self):
-        """Wait for the process to finish."""
-        while self.process.poll() is None:
-            await asyncio.sleep(0.1)
+            if tools_response.get('error'):
+                return {"error": f"Failed to list tools: {tools_response['error']['message']}"}
+
+            return tools_response.get('result', {})
+        except Exception as e:
+            return {"error": f"Tool listing error: {str(e)}"}
+
+    async def stop(self):
+        """Stop the HTTP connection."""
+        if self.session:
+            self.session.close()
+            print("HTTP MCP client connection closed")
+    async def stop(self):
+        """Stop the HTTP connection."""
+        if self.session:
+            self.session.close()
+            print("HTTP MCP client connection closed")
 
 
 class WebSearchTool:
     """Wrapper for web search functionality in Lily-Core."""
 
     def __init__(self):
-        # Always use MCP protocol
+        # Use MCP-over-HTTP protocol
         self.client = WebScoutMCPClient()
 
     async def initialize(self):

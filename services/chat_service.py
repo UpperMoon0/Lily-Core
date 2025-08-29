@@ -70,7 +70,7 @@ class ChatService:
             context_str = self._build_context_string(context_messages)
 
             # Determine if tool usage is appropriate
-            should_use_tool, tool_name, reasoning = self.tool_service.should_use_tool(message, context_str)
+            should_use_tool, tool_name, reasoning = await self.tool_service.should_use_tool(message, context_str)
 
             print(f"🤖 Tool decision: {should_use_tool} ({reasoning})")
 

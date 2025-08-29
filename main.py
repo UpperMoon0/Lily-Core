@@ -99,9 +99,11 @@ def main():
     # Show web-scout configuration status
     if config.WEB_SCOUT_URL:
         print(f"✅ Web-Scout URL: {config.WEB_SCOUT_URL}")
+        print("🔄 MCP Protocol: ENABLED (Web-Scout as remote MCP server)")
     else:
         print("⚠️  Warning: WEB_SCOUT_URL not configured")
         print("   Using default: http://web-scout:8000")
+        print("   Web search functionality may not be available")
 
     # Show debug status
     if config.DEBUG:

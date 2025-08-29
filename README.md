@@ -11,7 +11,7 @@ A clean architecture implementation of an AI-powered chatbot that provides intel
 - 🔧 **RESTful API**: Complete HTTP API with FastAPI
 - 📡 **MCP Protocol**: JSON-RPC communication for tool integration
 - 💾 **Persistent Storage**: Conversation history and state management
-- 🧪 **Testable Design**: Unit and integration test support</search>
+- 🧪 **Testable Design**: Unit and integration test support
 
 ## Prerequisites
 
@@ -139,7 +139,7 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 Lily-Core communicates with Web-Scout using JSON-RPC MCP (Model Context Protocol) via subprocess communication:
 - Launches Web-Scout MCP server as a subprocess
 - Uses JSON-RPC protocol for tool calls and web search
-- Ensures consistent behavior across all environments</search>
+- Ensures consistent behavior across all environments
 
 ## Usage Examples
 
@@ -213,7 +213,7 @@ The `compose.yaml` defines Lily-Core as a single service that launches the Web-S
 
 1. **lily-core**: The main application that handles HTTP API requests and manages the MCP subprocess
 
-This simplified architecture ensures consistent behavior across all environments using JSON-RPC MCP protocol.</search>
+This simplified architecture ensures consistent behavior across all environments using JSON-RPC MCP protocol.
 
 ## Development
 
@@ -225,7 +225,7 @@ pip install -r requirements.txt
 
 # Run Lily-Core (automatically starts Web-Scout MCP as subprocess)
 python main.py
-```</search>
+```
 
 ### Testing
 
