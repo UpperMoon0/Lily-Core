@@ -1,19 +1,23 @@
-# 🌸 Lily-Core: AI-Powered Web Search Client
+# 🌸 Lily-Core: AI-Powered ChatBot with MCP Protocol
 
-A client application that demonstrates web search functionality through MCP (Model Context Protocol) integration with Web-Scout.
+A clean architecture implementation of an AI-powered chatbot that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration with Web-Scout.
 
 ## Features
 
-- 🌐 **Web Search**: Perform intelligent web searches using DuckDuckGo
-- 🤖 **AI Summarization**: Get AI-powered summaries using Google Gemini
-- 🔄 **Dual Modes**: Support for both summary and detailed analysis
-- 🐳 **Container Ready**: Full Docker support with networking
-- 🔧 **MCP Integration**: Seamless communication via MCP protocol
+- 🤖 **AI ChatBot**: Powered by Google Gemini with conversation memory
+- 🌐 **Intelligent Web Search**: Context-aware web search using Web-Scout integration via MCP
+- 🔄 **Search Modes**: Configurable summary and detailed analysis modes
+- 🏗️ **Clean Architecture**: Well-structured, maintainable, and testable codebase
+- 🔧 **RESTful API**: Complete HTTP API with FastAPI
+- 📡 **MCP Protocol**: JSON-RPC communication for tool integration
+- 💾 **Persistent Storage**: Conversation history and state management
+- 🧪 **Testable Design**: Unit and integration test support</search>
 
 ## Prerequisites
 
 - Docker and Docker Compose
 - Google Gemini API key
+- Web-Scout service (optional, for full functionality)
 
 ## Quick Start
 
@@ -34,39 +38,89 @@ cp .env.template .env
 docker-compose up --build
 ```
 
-This will start both Web-Scout (MCP server) and Lily-Core services.
+This will start the Lily-Core service and optionally connect to Web-Scout.
 
-### 3. Interactive Search
+### 3. HTTP API Usage
 
 ```bash
-# Access Lily-Core container
-docker-compose exec lily-core bash
+# Health check
+curl http://localhost:8000/health
 
-# Run interactive search
-python main.py
+# Send a chat message
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is artificial intelligence?", "user_id": "test_user"}'
 
-# Or search from command line
-python main.py "artificial intelligence"
-python main.py "machine learning" detailed
+# Get conversation history
+curl http://localhost:8000/conversation/test_user
+
+# Clear conversation
+curl -X DELETE http://localhost:8000/conversation/test_user
 ```
 
 ## Architecture
 
 ```
-┌─────────────────┐    MCP/HTTP    ┌─────────────────┐
-│   Lily-Core     │◄──────────────►│   Web-Scout     │
-│                 │                │                 │
-│ • MCP Client    │                │ • MCP Server    │
-│ • CLI Interface │                │ • REST API      │
-│ • Web Search    │                │ • DuckDuckGo    │
-└─────────────────┘                └─────────────────┘
-                                        │
-                                        ▼
-                                 ┌─────────────────┐
-                                 │   Gemini AI     │
-                                 │ • Summarization │
-                                 │ • Analysis      │
-                                 └─────────────────┘
+┌─────────────────────────────────────────────────┐
+│                Interface Adapters               │
+│  ┌─────────────────┐     ┌─────────────────┐   │
+│  │   FastAPI       │     │   Routes        │   │
+│  │   Controllers   │◄────┤   (HTTP API)    │   │
+│  │                 │     │                 │   │
+│  │ • HTTP Request  │     │ • JSON Models   │   │
+│  │   Handling      │     │ • Endpoints     │   │
+│  │ • Response      │     │ • CORS Config   │   │
+│  │   Formatting    │     │                 │   │
+│  └─────────────────┘     └─────────────────┘   │
+└─────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────┐
+│                 Use Cases                       │
+│  ┌─────────────────┐     ┌─────────────────┐   │
+│  │   Chat Service  │     │   Tool Service  │   │
+│  │                 │     │                 │   │
+│  │ • Conversation  │     │ • Web Search    │   │
+│  │   Orchestration │     │ • Tool Management│   │
+│  │ • Response      │     │ • Decision Logic │   │
+│  │   Generation    │     │ • Tool Calls    │   │
+│  │                 │     │                 │   │
+│  └─────────────────┘     └─────────────────┘   │
+│  ┌─────────────────┐                            │
+│  │ Memory Service │                            │
+│  │                 │                            │
+│  │ • Conversation  │                            │
+│  │   Storage       │                            │
+│  │ • History Mgmt  │                            │
+│  │ • Persistence   │                            │
+│  └─────────────────┘                            │
+└─────────────────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────┐
+│                 Domain Entities                 │
+│  ┌─────────────────┐     ┌─────────────────┐   │
+│  │  Models         │     │ Business Config │   │
+│  │                 │     │                 │   │
+│  │ • Message       │     │ • ChatSettings  │   │
+│  │ • Conversation  │     │ • Configuration │   │
+│  │ • API DTOs      │     │ • Core Entities │   │
+│  │ • Validation    │     │                 │   │
+│  └─────────────────┘     └─────────────────┘   │
+└─────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────┐
+│                 External Systems                │
+│  ┌─────────────────┐     ┌─────────────────┐   │
+│  │   Web-Scout     │     │   Gemini AI     │   │
+│  │   (MCP/HTTP)    │     │                 │   │
+│  │                 │     │ • AI Model      │   │
+│  │ • Web Search    │     │ • Generation    │   │
+│  │ • Data Sources  │     │ • Context Mgmt  │   │
+│  │                 │     │                 │   │
+│  └─────────────────┘     └─────────────────┘   │
+└─────────────────────────────────────────────────┘
 ```
 
 ## Configuration
@@ -76,23 +130,16 @@ python main.py "machine learning" detailed
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `GEMINI_API_KEY` | Your Google Gemini API key | Required |
-| `DOCKER_MODE` | Run in Docker container mode | `false` |
-| `WEB_SCOUT_HOST` | Web-Scout server hostname | `web-scout` |
-| `WEB_SCOUT_PORT` | Web-Scout server port | `8000` |
+| `WEB_SCOUT_MCP_PATH` | Path to Web-Scout MCP server | `../Web-Scout/mcp_server.py` |
 | `DEFAULT_SEARCH_MODE` | Search mode preference | `summary` |
 | `LOG_LEVEL` | Logging level | `INFO` |
 
-### Docker Mode vs Local Mode
+### MCP Protocol
 
-**Local Mode** (default):
-- Uses MCP protocol via subprocess communication
-- Requires Web-Scout MCP server to be running
-- Best for development
-
-**Docker Mode**:
-- Uses HTTP REST API communication
-- Automatically detects Docker environment
-- Best for production/containerized deployments
+Lily-Core communicates with Web-Scout using JSON-RPC MCP (Model Context Protocol) via subprocess communication:
+- Launches Web-Scout MCP server as a subprocess
+- Uses JSON-RPC protocol for tool calls and web search
+- Ensures consistent behavior across all environments</search>
 
 ## Usage Examples
 
@@ -162,12 +209,11 @@ Main class for web search functionality.
 
 ## Docker Services
 
-The `compose.yaml` defines two services:
+The `compose.yaml` defines Lily-Core as a single service that launches the Web-Scout MCP server as a subprocess:
 
-1. **web-scout**: The MCP server (port 8000)
-2. **lily-core**: The client application (port 8001)
+1. **lily-core**: The main application that handles HTTP API requests and manages the MCP subprocess
 
-Services communicate through a Docker network named `lily-network`.
+This simplified architecture ensures consistent behavior across all environments using JSON-RPC MCP protocol.</search>
 
 ## Development
 
@@ -177,14 +223,9 @@ Services communicate through a Docker network named `lily-network`.
 # Install dependencies
 pip install -r requirements.txt
 
-# Start Web-Scout MCP server
-cd ../Web-Scout
-python mcp_server.py
-
-# In another terminal, run Lily-Core
-cd ../Lily-Core
+# Run Lily-Core (automatically starts Web-Scout MCP as subprocess)
 python main.py
-```
+```</search>
 
 ### Testing
 

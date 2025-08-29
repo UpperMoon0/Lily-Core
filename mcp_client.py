@@ -3,7 +3,7 @@
 MCP Client for Lily-Core.
 
 This client connects to the Web-Scout MCP server to perform web searches.
-Supports both local development and Docker container modes.
+Always uses JSON-RPC MCP protocol via subprocess communication.
 """
 
 import asyncio
@@ -11,32 +11,25 @@ import json
 import subprocess
 import sys
 import os
-import requests
 from typing import Dict, Any, Optional
 import threading
 import time
 import signal
 from dotenv import load_dotenv
 
+from .core.config import config
+
 
 class WebScoutMCPClient:
-    """Client for Web-Scout MCP server."""
+    """Client for Web-Scout MCP server using JSON-RPC protocol."""
 
-    def __init__(self, docker_mode: bool = False):
-        # Auto-detect Docker mode based on environment
-        self.docker_mode = docker_mode or os.getenv('DOCKER_MODE', 'false').lower() == 'true'
-
-        if self.docker_mode:
-            # Docker mode: Use HTTP REST API
-            self.http_base_url = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
-            self.session = requests.Session()
-        else:
-            # Local mode: Use direct MCP process
-            self.web_scout_path = os.getenv('WEB_SCOUT_MCP_PATH', '../Web-Scout/mcp_server.py')
-            self.gemini_api_key = os.getenv('GEMINI_API_KEY')
-            self.process = None
-            self.request_id = 0
-            self.response_queue = asyncio.Queue()
+    def __init__(self):
+        # Always use MCP protocol via subprocess
+        self.web_scout_path = config.WEB_SCOUT_MCP_PATH
+        self.gemini_api_key = config.GEMINI_API_KEY
+        self.process = None
+        self.request_id = 0
+        self.response_queue = asyncio.Queue()
 
     def _get_next_id(self) -> str:
         """Get next request ID."""
@@ -45,22 +38,8 @@ class WebScoutMCPClient:
 
     async def start(self):
         """Start the MCP connection."""
-        if self.docker_mode:
-            # Test HTTP connection
-            try:
-                response = self.session.get(f"{self.http_base_url}/health", timeout=5)
-                if response.status_code == 200:
-                    print("Web-Scout server is healthy")
-                    return True
-                else:
-                    print(f"Web-Scout server returned status {response.status_code}")
-                    return False
-            except requests.exceptions.RequestException as e:
-                print(f"Cannot connect to Web-Scout server: {e}")
-                return False
-        else:
-            # Start local MCP process
-            return await self._start_local_process()
+        # Start local MCP process
+        return await self._start_local_process()
 
     async def _start_local_process(self):
         """Start the local MCP server process."""
@@ -132,46 +111,16 @@ class WebScoutMCPClient:
     async def _send_request(self, request: dict) -> dict:
         """Send a request to the MCP server."""
         try:
-            if self.docker_mode:
-                # HTTP mode - convert MCP request to HTTP request
-                if request['method'] == 'tools/list':
-                    # Get tools info from /tools endpoint
-                    try:
-                        response = self.session.get(f"{self.http_base_url}/tools", timeout=10)
-                        if response.status_code == 200:
-                            return response.json()
-                        else:
-                            return {'error': {'code': response.status_code, 'message': f'HTTP {response.status_code}: {response.text}'}}
-                    except requests.exceptions.RequestException as e:
-                        return {'error': {'code': -32000, 'message': f'Cannot connect to server: {e}'}}
-                elif request['method'] == 'tools/call':
-                    # Handle tool calls via HTTP
-                    try:
-                        params = request.get('params', {})
-                        tool_params = {
-                            'name': params.get('name'),
-                            'arguments': params.get('arguments', {})
-                        }
-                        response = self.session.post(f"{self.http_base_url}/tools/call", json=tool_params, timeout=30)
-                        if response.status_code == 200:
-                            return response.json()
-                        else:
-                            return {'error': {'code': response.status_code, 'message': f'HTTP {response.status_code}: {response.text}'}}
-                    except requests.exceptions.RequestException as e:
-                        return {'error': {'code': -32000, 'message': f'Tool call failed: {e}'}}
-                else:
-                    return {'error': {'code': -32601, 'message': f'Method {request["method"]} not supported in Docker mode'}}
-            else:
-                # Local MCP mode
-                request_json = json.dumps(request) + '\n'
-                self.process.stdin.write(request_json)
-                self.process.stdin.flush()
+            # MCP mode - send request via subprocess
+            request_json = json.dumps(request) + '\n'
+            self.process.stdin.write(request_json)
+            self.process.stdin.flush()
 
-                response = await asyncio.wait_for(
-                    self.response_queue.get(),
-                    timeout=30.0
-                )
-                return response
+            response = await asyncio.wait_for(
+                self.response_queue.get(),
+                timeout=30.0
+            )
+            return response
 
         except asyncio.TimeoutError:
             return {'error': {'code': -32000, 'message': 'Request timeout'}}
@@ -181,60 +130,48 @@ class WebScoutMCPClient:
     async def search_web(self, query: str, mode: str = "summary") -> dict:
         """Perform a web search using the Web-Scout server."""
         try:
-            if self.docker_mode:
-                # Use REST API directly in Docker mode
-                params = {'query': query, 'mode': 0 if mode == 'summary' else 1}
-                response = self.session.get(f"{self.http_base_url}/search", params=params, timeout=30)
+            # Use MCP protocol
+            # First check if tools are available
+            tools_response = await self._send_request({
+                'jsonrpc': '2.0',
+                'id': self._get_next_id(),
+                'method': 'tools/list'
+            })
 
-                if response.status_code == 200:
-                    return response.json()
-                else:
-                    return {
-                        "error": f"HTTP {response.status_code}: {response.text}"
-                    }
-            else:
-                # Use MCP protocol in local mode
-                # First check if tools are available
-                tools_response = await self._send_request({
-                    'jsonrpc': '2.0',
-                    'id': self._get_next_id(),
-                    'method': 'tools/list'
-                })
+            if tools_response.get('error'):
+                return {"error": f"Failed to list tools: {tools_response['error']['message']}"}
 
-                if tools_response.get('error'):
-                    return {"error": f"Failed to list tools: {tools_response['error']['message']}"}
+            # Call the web search tool
+            call_response = await self._send_request({
+                'jsonrpc': '2.0',
+                'id': self._get_next_id(),
+                'method': 'tools/call',
+                'params': {
+                    'name': 'web_search',
+                    'arguments': {'query': query, 'mode': mode}
+                }
+            })
 
-                # Call the web search tool
-                call_response = await self._send_request({
-                    'jsonrpc': '2.0',
-                    'id': self._get_next_id(),
-                    'method': 'tools/call',
-                    'params': {
-                        'name': 'web_search',
-                        'arguments': {'query': query, 'mode': mode}
-                    }
-                })
+            if call_response.get('error'):
+                return {"error": f"Tool call failed: {call_response['error']['message']}"}
 
-                if call_response.get('error'):
-                    return {"error": f"Tool call failed: {call_response['error']['message']}"}
+            # Extract the result from the content
+            result_content = call_response.get('result', {}).get('content', [])
+            if result_content:
+                try:
+                    result_text = result_content[0].get('text', '{}')
+                    return json.loads(result_text)
+                except json.JSONDecodeError:
+                    return {"error": "Invalid JSON response from MCP server"}
 
-                # Extract the result from the content
-                result_content = call_response.get('result', {}).get('content', [])
-                if result_content:
-                    try:
-                        result_text = result_content[0].get('text', '{}')
-                        return json.loads(result_text)
-                    except json.JSONDecodeError:
-                        return {"error": "Invalid JSON response from MCP server"}
-
-                return {"error": "No content received from MCP server"}
+            return {"error": "No content received from MCP server"}
 
         except Exception as e:
             return {"error": f"Web search error: {str(e)}"}
 
     async def stop(self):
         """Stop the connection."""
-        if not self.docker_mode and self.process:
+        if self.process:
             try:
                 self.process.terminate()
                 await asyncio.wait_for(self._wait_pid(), timeout=5.0)
@@ -253,7 +190,7 @@ class WebSearchTool:
     """Wrapper for web search functionality in Lily-Core."""
 
     def __init__(self):
-        # Auto-detect mode from environment
+        # Always use MCP protocol
         self.client = WebScoutMCPClient()
 
     async def initialize(self):
