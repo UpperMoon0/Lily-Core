@@ -4,6 +4,7 @@ Lily-Core API Routes
 
 HTTP interface adapters for the chat system using FastAPI.
 Provides REST endpoints for chat functionality and follows clean architecture.
+Enhanced with Agent Loop Architecture for advanced reasoning.
 """
 
 from fastapi import APIRouter, HTTPException, Query
@@ -43,37 +44,80 @@ async def health_check() -> HealthResponse:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    use_agent_loop: Optional[bool] = Query(False, description="Use advanced agent loop system for multi-step reasoning")
+) -> ChatResponse:
     """
     Send a message to the chatbot and get a response.
 
-    The chatbot will intelligently decide whether to use web search tools
-    based on the context and content of your message.
+    The chatbot can use simple tool logic or advanced agent loop for complex reasoning.
+    Agent loop provides multi-step planning, iterative tool usage, and sophisticated problem solving.
 
     Args:
         request: Chat request with message and user ID
+        use_agent_loop: Whether to use advanced agent loop (default: False)
 
     Returns:
         ChatResponse: Chat response with metadata
     """
     try:
-        # Process the chat message using chat service
-        result = await chat_service.chat(
+        # Process the chat message using chat service with agent loop option
+        result = await chat_service.chat_with_agent_loop(
             message=request.message,
-            user_id=request.user_id
+            user_id=request.user_id,
+            use_agent_loop=use_agent_loop
         )
 
-        return ChatResponse(
-            response=result['response'],
-            user_id=result['user_id'],
-            timestamp=result['timestamp'],
-            used_tool=result.get('used_tool', False),
-            tool_used=result.get('tool_used'),
-            metadata=request.metadata
-        )
+        # Build response with enhanced metadata if agent loop was used
+        response_data = {
+            'response': result['response'],
+            'user_id': result['user_id'],
+            'timestamp': result['timestamp'],
+            'tool_used': result.get('tool_used'),
+            'metadata': request.metadata or {}
+        }
+
+        # Add agent loop metadata if used
+        if use_agent_loop and 'agent_loop' in result:
+            response_data['metadata']['agent_loop'] = {
+                'used': True,
+                'steps': result['agent_loop']['total_steps'],
+                'execution_time': result['agent_loop'].get('execution_time', 0)
+            }
+
+        return ChatResponse(**response_data)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+
+@router.get("/agent-loop/status")
+async def get_agent_loop_status() -> Dict[str, Any]:
+    """
+    Get the status of the agent loop system.
+
+    Returns:
+        dict: Status information about agent loop capabilities
+    """
+    return {
+        "agent_loop_available": True,
+        "features": [
+            "Multi-step reasoning and planning",
+            "Iterative tool execution",
+            "Dynamic context updates",
+            "Sophisticated problem solving",
+            "Fallback to simple chat mode"
+        ],
+        "max_steps": 5,
+        "supported_actions": [
+            "EXECUTE_TOOL",
+            "GENERATE_RESPONSE",
+            "ASK_CLARIFICATION",
+            "TERMINATE"
+        ],
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @router.get("/conversation/{user_id}")
@@ -192,7 +236,8 @@ async def root() -> ApiInfoResponse:
         endpoints={
             "GET /": "API information",
             "GET /health": "Health check",
-            "POST /chat": "Send chat message",
+            "POST /chat": "Send chat message (supports agent loop with ?use_agent_loop=true)",
+            "GET /agent-loop/status": "Get agent loop system status",
             "GET /conversation/{user_id}": "Get conversation history",
             "DELETE /conversation/{user_id}": "Clear conversation history",
             "GET /tools": "Get available tools information",
@@ -201,8 +246,11 @@ async def root() -> ApiInfoResponse:
         features=[
             "Intelligent tool usage (decides when to search web)",
             "Conversation memory and context",
+            "Advanced Agent Loop Architecture for multi-step reasoning",
             "Automatic search mode selection (summary/detailed)",
-            "Gemini AI powered responses",
+            "Gemini AI powered responses with iterative planning",
+            "Reason-Act-Observe pattern for complex problem solving",
             "Clean architecture design"
-        ]
+        ],
+        health_endpoint="/health"
     )

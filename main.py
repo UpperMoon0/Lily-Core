@@ -32,10 +32,14 @@ async def lifespan(app: FastAPI):
         # Startup: Initialize core services
         success = await chat_service.initialize()
         if not success:
-            raise Exception("Failed to initialize chat service")
+            print("⚠️  Chat service initialization failed - continuing with reduced functionality")
+            print("⚠️  Web search and tool capabilities may not be available")
+            # Don't raise exception - continue with degraded service
+        else:
+            print("✅ Chat service initialized successfully")
 
-        print("✅ Chat service initialized successfully")
         print(f"🚀 Starting HTTP server on {config.HOST}:{config.PORT}")
+        print("💡 System will continue operating even if MCP servers are unavailable")
 
         yield
 

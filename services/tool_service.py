@@ -199,27 +199,45 @@ class ToolService:
     async def initialize(self) -> bool:
         """
         Initialize the tool service and discover available tools.
+        Always succeeds but may have reduced functionality if MCP servers are down.
 
         Returns:
-            bool: True if initialization was successful
+            bool: True if initialization was successful (always succeeds)
         """
         try:
             # Try to discover web search tool
-            await self._discover_tools()
+            tool_discovery_success = await self._discover_tools()
             self._initialized = True
+            if not tool_discovery_success:
+                print("⚠️  Tool discovery failed - system will operate in conversational-only mode")
             return True
         except Exception as e:
-            print(f"Warning: Tool service initialization failed: {e}")
-            return False
+            # Even if there's an exception, continue with empty tools
+            print(f"Warning: Tool service initialization encountered errors: {e}")
+            print("⚠️  Continuing with conversational-only mode")
+            self.available_tools = []  # Reset to empty
+            self.web_search_tool = None
+            self._initialized = True
+            return True
 
-    async def _discover_tools(self) -> None:
-        """Discover and configure available tools."""
+    async def _discover_tools(self) -> bool:
+        """Discover and configure available tools.
+
+        Returns:
+            bool: True if tools were successfully discovered, False if MCP server is down
+        """
         # Try to import and initialize web search tool
         try:
             from mcp_client import get_web_search_tool, WebSearchTool
 
             self.web_search_tool = get_web_search_tool()
-            await self.web_search_tool.initialize()
+            init_success = await self.web_search_tool.initialize()
+
+            if not init_success:
+                print("⚠️  MCP client initialization failed - MCP server may be down")
+                self.available_tools = []
+                self.web_search_tool = None
+                return False
 
             # Add web search tool to available tools
             self.available_tools = [
@@ -240,12 +258,15 @@ class ToolService:
             ]
 
             print("✅ Tool service initialized with web search capability")
+            return True
 
         except Exception as e:
             print(f"⚠️  Web search tool not available: {e}")
             print("➡️  Continuing without web search capabilities")
+            print("💡 System will operate in conversational-only mode")
             self.available_tools = []
             self.web_search_tool = None
+            return False
 
     async def should_use_tool(self, user_message: str, conversation_context: Optional[str] = None) -> tuple[bool, str, str]:
         """

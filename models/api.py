@@ -24,7 +24,6 @@ class ChatResponse(BaseModel):
     response: str
     user_id: str
     timestamp: str
-    used_tool: bool = False
     tool_used: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 

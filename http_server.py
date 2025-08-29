@@ -29,7 +29,6 @@ class ChatResponse(BaseModel):
     response: str
     user_id: str
     timestamp: str
-    used_tool: bool = False
 
 
 class ConversationHistory(BaseModel):
@@ -114,11 +113,7 @@ async def chat(message: ChatMessage):
         response = ChatResponse(
             response=response_text,
             user_id=message.user_id,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            used_tool=any(keyword in response_text.lower() for keyword in [
-                'based on my web search', 'searched the web', 'found online',
-                'search result', 'information was gathered from'
-            ])
+            timestamp=datetime.now(timezone.utc).isoformat()
         )
 
         return response

@@ -4,6 +4,7 @@ Lily-Core Configuration Module
 
 Centralized configuration for the Lily chatbot system.
 Contains business configuration, AI model setup, and core settings.
+Enhanced with Agent Loop Architecture configuration.
 """
 
 import os
@@ -29,7 +30,7 @@ class Config:
     TOP_P: float = float(os.getenv('TOP_P', '0.8'))
     MAX_OUTPUT_TOKENS: int = int(os.getenv('MAX_OUTPUT_TOKENS', '1000'))
 
-        # Web-Scout Integration
+    # Web-Scout Integration
     WEB_SCOUT_URL: str = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
 
     def __init__(self):
@@ -63,6 +64,13 @@ class ChatSettings:
         self.enable_tool_usage: bool = True  # Whether to use tools like web search
         self.auto_tool_detection: bool = True  # Whether to automatically detect when to use tools
         self.conversation_context_window: int = 10  # Number of recent messages for context
+
+        # Agent Loop Configuration
+        self.enable_agent_loop: bool = True  # Enable advanced agent loop system
+        self.max_loop_steps: int = int(os.getenv('MAX_LOOP_STEPS', '5'))  # Maximum steps in agent loop
+        self.agent_loop_confidence_threshold: float = float(os.getenv('AGENT_LOOP_CONFIDENCE', '0.6'))  # Confidence threshold for actions
+        self.agent_loop_timeout: int = int(os.getenv('AGENT_LOOP_TIMEOUT', '60'))  # Timeout for agent loop in seconds
+
         self.search_keywords = [
             'search', 'find', 'lookup', 'research', 'what is', 'how to',
             'tell me about', 'what are', 'where can', 'latest', 'news',

@@ -24,7 +24,6 @@ class WebScoutMCPClient:
         self.mcp_url = f"{self.web_scout_url}/mcp"
         self.session = requests.Session()
         self.request_id = 0
-</search_and_replace>
 
     def _get_next_id(self) -> str:
         """Get next request ID."""
@@ -134,7 +133,6 @@ class WebScoutMCPClient:
         if self.session:
             self.session.close()
             print("HTTP MCP client connection closed")
-
 
 class WebSearchTool:
     """Wrapper for web search functionality in Lily-Core."""
