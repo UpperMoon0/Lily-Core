@@ -31,7 +31,7 @@ class Config:
     MAX_OUTPUT_TOKENS: int = int(os.getenv('MAX_OUTPUT_TOKENS', '1000'))
 
     # Web-Scout Integration
-    WEB_SCOUT_URL: str = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8001')
+    WEB_SCOUT_URL: str = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
 
     def __init__(self):
         """Validate configuration on initialization."""
