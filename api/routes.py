@@ -12,7 +12,8 @@ from typing import Dict, List, Optional, Any
 
 from models.api import (
     ChatRequest, ChatResponse, ConversationResponse,
-    ToolsResponse, ToolInfo, HealthResponse, ApiInfoResponse
+    ToolsResponse, ToolInfo, HealthResponse, ApiInfoResponse,
+    MonitoringResponse, ServiceStatus, SystemMetrics
 )
 from services.chat_service import get_chat_service
 from services.memory_service import get_memory_service
@@ -207,10 +208,10 @@ async def get_available_tools() -> ToolsResponse:
 async def get_conversation_summary(user_id: str) -> Dict[str, Any]:
     """
     Get summary information about a user's conversation.
-
+    
     Args:
         user_id: User identifier
-
+        
     Returns:
         dict: Conversation summary
     """
@@ -220,6 +221,76 @@ async def get_conversation_summary(user_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get conversation summary: {str(e)}")
+
+
+@router.get("/monitoring")
+async def get_monitoring_status() -> MonitoringResponse:
+    """
+    Get comprehensive monitoring status of the Lily Core service.
+    
+    Returns:
+        MonitoringResponse: Detailed system status and metrics
+    """
+    try:
+        import psutil
+        import time
+        from datetime import datetime, timedelta
+        
+        # Get system metrics
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory_info = psutil.virtual_memory()
+        disk_info = psutil.disk_usage('/')
+        
+        # Calculate uptime
+        boot_time = psutil.boot_time()
+        uptime = str(timedelta(seconds=time.time() - boot_time))
+        
+        metrics = SystemMetrics(
+            cpu_usage=cpu_usage,
+            memory_usage=memory_info.percent,
+            disk_usage=(disk_info.used / disk_info.total) * 100,
+            uptime=uptime
+        )
+        
+        # Get service status (chatbot)
+        chatbot_status = ServiceStatus(
+            name="ChatBot Service",
+            status="healthy" if chat_service else "down",
+            details={"ready": chat_service is not None},
+            last_updated=datetime.now().isoformat()
+        )
+        
+        # Get service status (memory)
+        memory_status = ServiceStatus(
+            name="Memory Service",
+            status="healthy" if memory_service else "down",
+            details={"ready": memory_service is not None},
+            last_updated=datetime.now().isoformat()
+        )
+        
+        # Overall status
+        overall_status = "healthy" if chat_service and memory_service else "degraded"
+        
+        return MonitoringResponse(
+            status=overall_status,
+            service_name="Lily-Core",
+            version="1.0.0",
+            timestamp=datetime.now().isoformat(),
+            metrics=metrics,
+            services=[chatbot_status, memory_status]
+        )
+        
+    except ImportError:
+        # If psutil is not available, return basic status
+        return MonitoringResponse(
+            status="healthy",
+            service_name="Lily-Core",
+            version="1.0.0",
+            timestamp=datetime.now().isoformat(),
+            details={"message": "Detailed metrics not available (psutil not installed)"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get monitoring status: {str(e)}")
 
 
 @router.get("/")
@@ -236,6 +307,7 @@ async def root() -> ApiInfoResponse:
         endpoints={
             "GET /": "API information",
             "GET /health": "Health check",
+            "GET /monitoring": "Comprehensive system monitoring",
             "POST /chat": "Send chat message (supports agent loop with ?use_agent_loop=true)",
             "GET /agent-loop/status": "Get agent loop system status",
             "GET /conversation/{user_id}": "Get conversation history",

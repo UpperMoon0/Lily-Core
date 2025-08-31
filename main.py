@@ -11,16 +11,18 @@ import os
 import sys
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 from core.config import config
 from api.routes import router
 from services.chat_service import get_chat_service
+from services.websocket_manager import get_websocket_manager
 
-# Global chat service instance
+# Global service instances
 chat_service = get_chat_service()
+websocket_manager = get_websocket_manager()
 
 
 @asynccontextmanager
@@ -38,6 +40,10 @@ async def lifespan(app: FastAPI):
         else:
             print("✅ Chat service initialized successfully")
 
+        # Initialize WebSocket manager
+        await websocket_manager.initialize()
+        print("✅ WebSocket manager initialized successfully")
+
         print(f"🚀 Starting HTTP server on {config.HOST}:{config.PORT}")
         print("💡 System will continue operating even if MCP servers are unavailable")
 
@@ -51,6 +57,7 @@ async def lifespan(app: FastAPI):
         # Shutdown: Clean up resources
         print("🧹 Cleaning up resources...")
         await chat_service.cleanup()
+        await websocket_manager.cleanup()
         print("✅ Server shut down cleanly")
 
 
@@ -82,6 +89,12 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+@app.websocket("/ws/tts/{client_id}")
+async def tts_websocket_endpoint(websocket: WebSocket, client_id: str):
+    """WebSocket endpoint for TTS connections."""
+    await websocket_manager.handle_client_connection(websocket, client_id)
+
+
 def main():
     """Main entry point for Lily-Core HTTP Server."""
     # Load environment variables
@@ -105,7 +118,7 @@ def main():
         print("🔄 MCP Protocol: ENABLED (Web-Scout as remote MCP server)")
     else:
         print("⚠️  Warning: WEB_SCOUT_URL not configured")
-        print("   Using default: http://web-scout:8000")
+        print("   Using default: http://web-scout:8001")
         print("   Web search functionality may not be available")
 
     # Show debug status
@@ -123,6 +136,8 @@ def main():
     print("   DELETE /conversation/{user_id} - Clear conversation")
     print("   GET  /tools    - Get available tools")
     print("   GET  /conversation-summary/{user_id} - Get conversation summary")
+    print("   WS   /ws/tts/{client_id} - TTS WebSocket endpoint")
+    print("   - Supports settings.update and tts.request messages")
     print("=" * 50)
     print("💡 The chatbot will automatically decide when to use web search")
     print("🌐 Send POST requests to /chat with: {'message': 'your message'}")

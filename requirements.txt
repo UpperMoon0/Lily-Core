@@ -4,3 +4,4 @@ uvicorn[standard]
 requests
 google-generativeai
 pydantic
+psutil
