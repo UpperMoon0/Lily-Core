@@ -1,26 +1,32 @@
-# Use Python 3.11 for compatibility with async operations
-FROM python:3.11-slim
+# Stage 1: Build the C++ application
+FROM gcc:latest as builder
 
-# Set the working directory in the container
+# Install CMake and Ninja for building
+RUN apt-get update && apt-get install -y cmake ninja-build
+
+# Set the working directory
 WORKDIR /app
 
-# Copy the dependencies file to the working directory
-COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the Lily-Core package structure
+# Copy the source code
 COPY . .
 
-# Copy environment file if it exists
-COPY .env* ./
+# Create a build directory
+RUN cmake -B build -S . -G Ninja
 
-# Expose port 8000 for Lily-Core (default port for HTTP server)
+# Build the project
+RUN cmake --build build
+
+# Stage 2: Create the final image
+FROM debian:bullseye-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the built executable from the builder stage
+COPY --from=builder /app/build/lily .
+
+# Expose the port the application runs on
 EXPOSE 8000
 
-# Create directory for conversation storage
-RUN mkdir -p conversations
-
-# Set the default command to run Lily-Core
-CMD ["python", "main.py"]
+# Command to run the executable
+CMD ["./lily"]

@@ -1,7 +1,0 @@
-python-dotenv
-fastapi
-uvicorn[standard]
-requests
-google-generativeai
-pydantic
-psutil

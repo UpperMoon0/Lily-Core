@@ -1,6 +1,6 @@
-# Lily-Core: AI-Powered Chat Service with MCP Protocol
+# Lily-Core-New: AI-Powered Chat Service in C++
 
-A clean architecture implementation of an AI-powered chat service that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration with Web-Scout, enhanced with advanced Agent Loop Architecture for multi-step reasoning.
+A C++ implementation of the AI-powered chat service that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration, enhanced with advanced Agent Loop Architecture for multi-step reasoning.
 
 ## Features
 
@@ -9,20 +9,49 @@ A clean architecture implementation of an AI-powered chat service that provides 
 - **Advanced Agent Loop Architecture**: Multi-step reasoning and planning for complex tasks
 - **Search Modes**: Configurable summary and detailed analysis modes
 - **Clean Architecture**: Well-structured, maintainable, and testable codebase
-- **RESTful API**: Complete HTTP API with FastAPI
+- **RESTful API**: Complete HTTP API with Crow (C++ web framework)
 - **MCP Protocol**: JSON-RPC communication for tool integration
 - **Persistent Storage**: Conversation history and state management
-- **Testable Design**: Unit and integration test support
 
 ## Prerequisites
 
-- Docker and Docker Compose
-- Google Gemini API key
-- Web-Scout service (optional, for full functionality)
+- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- CMake 3.10+
+- Crow C++ microframework
+- JSON for Modern C++ (nlohmann/json)
+- libcurl for HTTP requests
+- Google Gemini C++ SDK (or REST API client)
 
 ## Quick Start
 
-### 1. Environment Setup
+### 1. Build Dependencies
+
+```bash
+# Install dependencies (Ubuntu/Debian)
+sudo apt-get update
+sudo apt-get install cmake build-essential libcurl4-openssl-dev
+
+# Clone and build Crow
+git clone https://github.com/CrowCpp/Crow.git
+cd Crow
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
+```
+
+### 2. Build Lily-Core
+
+```bash
+cd Lily-Core-New
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+### 3. Configuration
+
+Create a `.env` file with your configuration:
 
 ```bash
 # Copy environment template
@@ -32,31 +61,11 @@ cp .env.template .env
 # GEMINI_API_KEY=your_actual_gemini_api_key_here
 ```
 
-### 2. Docker Deployment
+### 4. Run
 
 ```bash
-# From the project root directory
-docker-compose up --build
-```
-
-This will start the Lily-Core service and optionally connect to Web-Scout.
-
-### 3. HTTP API Usage
-
-```bash
-# Health check
-curl http://localhost:8000/health
-
-# Send a chat message
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What is artificial intelligence?", "user_id": "test_user"}'
-
-# Get conversation history
-curl http://localhost:8000/conversation/test_user
-
-# Clear conversation
-curl -X DELETE http://localhost:8000/conversation/test_user
+# From the build directory
+./lily-core
 ```
 
 ## Architecture
@@ -65,7 +74,7 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 ┌─────────────────────────────────────────────────┐
 │                Interface Adapters               │
 │  ┌─────────────────┐     ┌─────────────────┐    │
-│  │   FastAPI       │     │   Routes        │    │
+│  │   Crow HTTP     │     │   Routes        │    │
 │  │   Controllers   │◄────┤   (HTTP API)    │    │
 │  │                 │     │                 │    │
 │  │ • HTTP Request  │     │ • JSON Models   │    │
@@ -74,8 +83,8 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 │  │   Formatting    │     │                 │    │
 │  └─────────────────┘     └─────────────────┘    │
 └─────────────────────────────────────────────────┘
-                        │
-                        ▼
+                         │
+                         ▼
 ┌─────────────────────────────────────────────────┐
 │                 Use Cases                       │
 │  ┌─────────────────┐     ┌──────────────────┐   │
@@ -96,8 +105,8 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 │  │ • Persistence   │                            │
 │  └─────────────────┘                            │
 └─────────────────────────────────────────────────┘
-                                 │
-                                 ▼
+                                  │
+                                  ▼
 ┌─────────────────────────────────────────────────┐
 │                 Domain Entities                 │
 │  ┌─────────────────┐     ┌─────────────────┐    │
@@ -109,8 +118,8 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 │  │ • Validation    │     │                 │    │
 │  └─────────────────┘     └─────────────────┘    │
 └─────────────────────────────────────────────────┘
-                        │
-                        ▼
+                         │
+                         ▼
 ┌─────────────────────────────────────────────────┐
 │                 External Systems                │
 │  ┌─────────────────┐     ┌─────────────────┐    │
@@ -124,161 +133,48 @@ curl -X DELETE http://localhost:8000/conversation/test_user
 └─────────────────────────────────────────────────┘
 ```
 
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GEMINI_API_KEY` | Your Google Gemini API key | Required |
-| `WEB_SCOUT_MCP_PATH` | Path to Web-Scout MCP server | `../Web-Scout/mcp_server.py` |
-| `DEFAULT_SEARCH_MODE` | Search mode preference | `summary` |
-| `LOG_LEVEL` | Logging level | `INFO` |
-
-### MCP Protocol
-
-Lily-Core communicates with Web-Scout using JSON-RPC MCP (Model Context Protocol) via subprocess communication:
-- Launches Web-Scout MCP server as a subprocess
-- Uses JSON-RPC protocol for tool calls and web search
-- Ensures consistent behavior across all environments
-
-## Usage Examples
-
-### Command Line
-
-```bash
-# Simple search
-python main.py "latest AI news"
-
-# Detailed analysis
-python main.py "quantum computing" detailed
-
-# Interactive mode
-python main.py
-```
-
-### Python API
-
-```python
-from mcp_client import sync_web_search
-
-# Simple search
-result = sync_web_search("artificial intelligence")
-print(result['summary'])
-
-# Detailed search
-result = sync_web_search("machine learning", mode="detailed")
-print(result['summary'])
-```
-
-### MCP Client Direct Usage
-
-```python
-from mcp_client import WebSearchTool
-
-async def search_example():
-    tool = WebSearchTool()
-    await tool.initialize()
-
-    result = await tool.search("web development trends")
-    print(result['summary'])
-
-    await tool.cleanup()
-```
-
 ## API Reference
 
-### `sync_web_search(query, mode="summary")`
+### Health Check
+```
+GET /health
+```
 
-Perform a synchronous web search.
+### Chat
+```
+POST /chat
+{
+  "message": "Hello, how are you?",
+  "user_id": "user123"
+}
+```
 
-**Parameters:**
-- `query` (str): The search query
-- `mode` (str): Response mode - "summary" or "detailed"
+### Get Conversation History
+```
+GET /conversation/{user_id}
+```
 
-**Returns:**
-- `dict`: Search results with summary and metadata
-
-### `WebSearchTool` Class
-
-Main class for web search functionality.
-
-**Methods:**
-- `initialize()`: Initialize the client connection
-- `search(query, mode)`: Perform a web search
-- `cleanup()`: Clean up resources
-
-## Docker Services
-
-The `compose.yaml` defines Lily-Core as a single service that launches the Web-Scout MCP server as a subprocess:
-
-1. **lily-core**: The main application that handles HTTP API requests and manages the MCP subprocess
-
-This simplified architecture ensures consistent behavior across all environments using JSON-RPC MCP protocol.
+### Clear Conversation
+```
+DELETE /conversation/{user_id}
+```
 
 ## Development
 
-### Local Development
+### Building
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run Lily-Core (automatically starts Web-Scout MCP as subprocess)
-python main.py
+mkdir build && cd build
+cmake ..
+make
 ```
 
 ### Testing
 
 ```bash
-# Run a test search
-python mcp_client.py "test query"
-
-# Test Docker integration
-docker-compose build
-docker-compose up -d
-docker-compose logs lily-core
+# Run unit tests
+./tests/lily_core_tests
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-**"Cannot connect to Web-Scout server"**
-- Ensure Web-Scout service is running and healthy
-- Check Docker network connectivity
-- Verify environment variables
-
-**"GEMINI_API_KEY not configured"**
-- Copy `.env.template` to `.env`
-- Add your actual Gemini API key
-- Restart the services
-
-**"MCP initialization failed"**
-- Check Web-Scout MCP server logs
-- Ensure Gemini API key is valid
-- Verify Python dependencies
-
-### Logs and Debugging
-
-```bash
-# View service logs
-docker-compose logs web-scout
-docker-compose logs lily-core
-
-# View specific container logs
-docker logs lily-core
-
-# Enter container for debugging
-docker-compose exec lily-core bash
-```
-
-## Security Notes
-
-- API keys are stored securely in `.env` files
-- Never commit `.env` files to version control
-- Use environment-specific configurations
-- The `.env` file is ignored by Git
 
 ## License
 
