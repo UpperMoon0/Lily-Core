@@ -52,9 +52,9 @@ class ChatService:
             print("⚠️  Chat service initialization had errors - continuing with reduced functionality")
             return True
 
-    async def chat(self, message: str, user_id: str = "default_user") -> Dict[str, Any]:
+    async def chat_with_agent_loop(self, message: str, user_id: str = "default_user") -> Dict[str, Any]:
         """
-        Main chat method that processes user input and generates responses.
+        Chat method that uses the advanced agent loop system.
 
         Args:
             message: User's message
@@ -67,56 +67,37 @@ class ChatService:
             await self.initialize()
 
         start_time = time.time()
-        tool_used = False
-        tool_name = None
 
         try:
             # Add user message to conversation
             user_msg = self.memory_service.add_message(user_id, 'user', message)
 
-            # Get conversation context
-            conversation = self.memory_service.get_conversation(user_id)
-            context_messages = conversation.get_recent_messages(chat_settings.conversation_context_window)
-            context_str = self._build_context_string(context_messages)
-
-            # Determine if tool usage is appropriate
-            should_use_tool, tool_name, reasoning = await self.tool_service.should_use_tool(message, context_str)
-
-            if should_use_tool:
-                # Use tool and generate response with tool results
-                response_text = await self._generate_tool_based_response(message, tool_name)
-                tool_used = True
-            else:
-                # Generate conversational response
-                response_text = await self._generate_conversational_response(message, context_str)
+            # Use the advanced agent loop system
+            print("🚀 Using advanced agent loop system")
+            loop_result = await self.agent_loop_service.execute_agent_loop(message, user_id)
 
             # Add assistant response to conversation
             assistant_msg = self.memory_service.add_message(
                 user_id,
                 'assistant',
-                response_text,
+                loop_result['response'],
                 metadata={
-                    'tool_used': tool_used,
-                    'tool_name': tool_name if tool_used else None,
+                    'agent_loop_used': True,
+                    'tool_used': loop_result.get('tool_used'),
+                    'loop_steps': loop_result.get('agent_loop', {}).get('total_steps', 0),
                     'response_time': time.time() - start_time
                 }
             )
 
-            # Build response
-            response = {
-                'response': response_text,
-                'user_id': user_id,
-                'timestamp': assistant_msg.timestamp.isoformat(),
-                'tool_used': tool_name if tool_used else None,
-                'conversation_id': f"{user_id}_{conversation.created_at.strftime('%Y%m%d%H%M%S')}"
-            }
+            # Enhance response with conversation ID
+            conversation = self.memory_service.get_conversation(user_id)
+            loop_result['conversation_id'] = f"{user_id}_{conversation.created_at.strftime('%Y%m%d%H%M%S')}"
 
-            return response
-
+            return loop_result
         except Exception as e:
-            error_msg = f"I'm sorry, I encountered an error: {str(e)}"
+            error_msg = f"I'm sorry, I encountered an error while processing your request: {str(e)}"
             self.memory_service.add_message(user_id, 'assistant', error_msg)
-
+            
             return {
                 'response': error_msg,
                 'user_id': user_id,
@@ -124,62 +105,6 @@ class ChatService:
                 'tool_used': None,
                 'error': str(e)
             }
-
-    async def chat_with_agent_loop(self, message: str, user_id: str = "default_user",
-                                   use_agent_loop: bool = True) -> Dict[str, Any]:
-        """
-        Enhanced chat method that can use either simple tool logic or advanced agent loop.
-
-        Args:
-            message: User's message
-            user_id: User identifier
-            use_agent_loop: Whether to use the advanced agent loop system
-
-        Returns:
-            dict: Chat response with metadata
-        """
-        if not self._initialized:
-            await self.initialize()
-
-        start_time = time.time()
-
-        try:
-            # Add user message to conversation
-            user_msg = self.memory_service.add_message(user_id, 'user', message)
-
-            if use_agent_loop:
-                # Use the advanced agent loop system
-                print("🚀 Using advanced agent loop system")
-                loop_result = await self.agent_loop_service.execute_agent_loop(message, user_id)
-
-                # Add assistant response to conversation
-                assistant_msg = self.memory_service.add_message(
-                    user_id,
-                    'assistant',
-                    loop_result['response'],
-                    metadata={
-                        'agent_loop_used': True,
-                        'tool_used': loop_result.get('tool_used'),
-                        'loop_steps': loop_result.get('agent_loop', {}).get('total_steps', 0),
-                        'response_time': time.time() - start_time
-                    }
-                )
-
-                # Enhance response with conversation ID
-                conversation = self.memory_service.get_conversation(user_id)
-                loop_result['conversation_id'] = f"{user_id}_{conversation.created_at.strftime('%Y%m%d%H%M%S')}"
-
-                return loop_result
-
-            else:
-                # Use the original simple logic
-                print("🔄 Using simple chat logic")
-                return await self.chat(message, user_id)
-
-        except Exception as e:
-            print(f"❌ Agent loop failed: {e}")
-            # Fallback to original chat method
-            return await self.chat(message, user_id)
 
     def _build_context_string(self, messages: List[Message]) -> str:
         """Build a context string from recent messages."""

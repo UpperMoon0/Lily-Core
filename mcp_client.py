@@ -31,20 +31,49 @@ class WebScoutMCPClient:
         self.request_id += 1
         return str(self.request_id)
 
-    async def start(self):
-        """Start the HTTP MCP connection."""
-        try:
-            # Test HTTP connection to MCP endpoint
-            response = self.session.get(f"{self.web_scout_url}/health", timeout=5)
-            if response.status_code == 200:
-                print(f"Web-Scout MCP server is healthy at {self.web_scout_url}")
-                return True
-            else:
-                print(f"Web-Scout server returned status {response.status_code}")
+    async def start(self, max_retries=3, retry_delay=2):
+        """Start the HTTP MCP connection with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                # Test HTTP connection to MCP endpoint
+                response = self.session.get(f"{self.web_scout_url}/health", timeout=5)
+                if response.status_code == 200:
+                    print(f"Web-Scout MCP server is healthy at {self.web_scout_url}")
+                    
+                    # Initialize MCP connection
+                    init_response = await self._send_request({
+                        'jsonrpc': '2.0',
+                        'id': self._get_next_id(),
+                        'method': 'initialize',
+                        'params': {}
+                    })
+                    
+                    if init_response.get('error'):
+                        print(f"Failed to initialize Web-Scout MCP connection: {init_response['error']['message']}")
+                        if attempt < max_retries - 1:
+                            print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        return False
+                        
+                    protocol_version = init_response.get('result', {}).get('protocolVersion')
+                    print(f"Web-Scout MCP connection initialized with protocol version: {protocol_version}")
+                    return True
+                else:
+                    print(f"Web-Scout server returned status {response.status_code}")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    return False
+            except requests.exceptions.RequestException as e:
+                print(f"Cannot connect to Web-Scout MCP server: {e}")
+                if attempt < max_retries - 1:
+                    print(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    continue
                 return False
-        except requests.exceptions.RequestException as e:
-            print(f"Cannot connect to Web-Scout MCP server: {e}")
-            return False
+        return False
 
     async def _send_request(self, request: dict) -> dict:
         """Send MCP request over HTTP."""
@@ -124,11 +153,6 @@ class WebScoutMCPClient:
         except Exception as e:
             return {"error": f"Tool listing error: {str(e)}"}
 
-    async def stop(self):
-        """Stop the HTTP connection."""
-        if self.session:
-            self.session.close()
-            print("HTTP MCP client connection closed")
     async def stop(self):
         """Stop the HTTP connection."""
         if self.session:

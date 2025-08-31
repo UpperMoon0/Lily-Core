@@ -37,7 +37,7 @@ async def health_check() -> HealthResponse:
     """
     return HealthResponse(
         status="healthy",
-        service="Lily-Core ChatBot",
+        service="Lily-Core Chat Service",
         version="1.0.0",
         chatbot_ready=True,
         timestamp=datetime.now().isoformat()
@@ -45,32 +45,27 @@ async def health_check() -> HealthResponse:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    use_agent_loop: Optional[bool] = Query(False, description="Use advanced agent loop system for multi-step reasoning")
-) -> ChatResponse:
+async def chat(request: ChatRequest) -> ChatResponse:
     """
     Send a message to the chatbot and get a response.
 
-    The chatbot can use simple tool logic or advanced agent loop for complex reasoning.
+    The chatbot uses the advanced agent loop system for complex reasoning.
     Agent loop provides multi-step planning, iterative tool usage, and sophisticated problem solving.
 
     Args:
         request: Chat request with message and user ID
-        use_agent_loop: Whether to use advanced agent loop (default: False)
 
     Returns:
         ChatResponse: Chat response with metadata
     """
     try:
-        # Process the chat message using chat service with agent loop option
+        # Process the chat message using chat service with agent loop (always enabled)
         result = await chat_service.chat_with_agent_loop(
             message=request.message,
-            user_id=request.user_id,
-            use_agent_loop=use_agent_loop
+            user_id=request.user_id
         )
 
-        # Build response with enhanced metadata if agent loop was used
+        # Build response with agent loop metadata
         response_data = {
             'response': result['response'],
             'user_id': result['user_id'],
@@ -79,8 +74,8 @@ async def chat(
             'metadata': request.metadata or {}
         }
 
-        # Add agent loop metadata if used
-        if use_agent_loop and 'agent_loop' in result:
+        # Add agent loop metadata
+        if 'agent_loop' in result:
             response_data['metadata']['agent_loop'] = {
                 'used': True,
                 'steps': result['agent_loop']['total_steps'],
@@ -226,15 +221,17 @@ async def get_conversation_summary(user_id: str) -> Dict[str, Any]:
 @router.get("/monitoring")
 async def get_monitoring_status() -> MonitoringResponse:
     """
-    Get comprehensive monitoring status of the Lily Core service.
+    Get comprehensive monitoring status of the Lily Core service and all connected services.
     
     Returns:
-        MonitoringResponse: Detailed system status and metrics
+        MonitoringResponse: Detailed system status and metrics for all services
     """
     try:
         import psutil
         import time
+        import requests
         from datetime import datetime, timedelta
+        from core.config import config
         
         # Get system metrics
         cpu_usage = psutil.cpu_percent(interval=1)
@@ -254,7 +251,7 @@ async def get_monitoring_status() -> MonitoringResponse:
         
         # Get service status (chatbot)
         chatbot_status = ServiceStatus(
-            name="ChatBot Service",
+            name="Chat Service",
             status="healthy" if chat_service else "down",
             details={"ready": chat_service is not None},
             last_updated=datetime.now().isoformat()
@@ -268,8 +265,68 @@ async def get_monitoring_status() -> MonitoringResponse:
             last_updated=datetime.now().isoformat()
         )
         
-        # Overall status
-        overall_status = "healthy" if chat_service and memory_service else "degraded"
+        # Get status from other services
+        other_services = []
+        
+        # Web-Scout status
+        try:
+            web_scout_response = requests.get(f"{config.WEB_SCOUT_MONITORING_URL}/monitoring", timeout=5)
+            if web_scout_response.status_code == 200:
+                web_scout_data = web_scout_response.json()
+                other_services.append(ServiceStatus(
+                    name="Web-Scout",
+                    status=web_scout_data.get("status", "unknown"),
+                    details=web_scout_data.get("details", {}),
+                    last_updated=web_scout_data.get("timestamp", datetime.now().isoformat())
+                ))
+            else:
+                other_services.append(ServiceStatus(
+                    name="Web-Scout",
+                    status="down",
+                    details={"error": f"HTTP {web_scout_response.status_code}"},
+                    last_updated=datetime.now().isoformat()
+                ))
+        except Exception as e:
+            other_services.append(ServiceStatus(
+                name="Web-Scout",
+                status="down",
+                details={"error": str(e)},
+                last_updated=datetime.now().isoformat()
+            ))
+        
+        # TTS-Provider status
+        try:
+            tts_provider_response = requests.get(f"{config.TTS_PROVIDER_MONITORING_URL}/monitoring", timeout=5)
+            if tts_provider_response.status_code == 200:
+                tts_provider_data = tts_provider_response.json()
+                other_services.append(ServiceStatus(
+                    name="TTS-Provider",
+                    status=tts_provider_data.get("status", "unknown"),
+                    details=tts_provider_data.get("details", {}),
+                    last_updated=tts_provider_data.get("timestamp", datetime.now().isoformat())
+                ))
+            else:
+                other_services.append(ServiceStatus(
+                    name="TTS-Provider",
+                    status="down",
+                    details={"error": f"HTTP {tts_provider_response.status_code}"},
+                    last_updated=datetime.now().isoformat()
+                ))
+        except Exception as e:
+            other_services.append(ServiceStatus(
+                name="TTS-Provider",
+                status="down",
+                details={"error": str(e)},
+                last_updated=datetime.now().isoformat()
+            ))
+        
+        # Combine all services
+        all_services = [chatbot_status, memory_status] + other_services
+        
+        # Overall status - healthy if core services are healthy and at least one external service is healthy
+        core_healthy = chat_service and memory_service
+        external_healthy = any(service.status == "healthy" for service in other_services)
+        overall_status = "healthy" if core_healthy and (len(other_services) == 0 or external_healthy) else "degraded"
         
         return MonitoringResponse(
             status=overall_status,
@@ -277,7 +334,7 @@ async def get_monitoring_status() -> MonitoringResponse:
             version="1.0.0",
             timestamp=datetime.now().isoformat(),
             metrics=metrics,
-            services=[chatbot_status, memory_status]
+            services=all_services
         )
         
     except ImportError:
@@ -302,13 +359,13 @@ async def root() -> ApiInfoResponse:
         ApiInfoResponse: API information and available endpoints
     """
     return ApiInfoResponse(
-        message="Welcome to Lily-Core ChatBot API 🌸",
+        message="Welcome to Lily-Core Chat Service API 🌸",
         version="1.0.0",
         endpoints={
             "GET /": "API information",
             "GET /health": "Health check",
             "GET /monitoring": "Comprehensive system monitoring",
-            "POST /chat": "Send chat message (supports agent loop with ?use_agent_loop=true)",
+            "POST /chat": "Send chat message (uses agent loop by default)",
             "GET /agent-loop/status": "Get agent loop system status",
             "GET /conversation/{user_id}": "Get conversation history",
             "DELETE /conversation/{user_id}": "Clear conversation history",

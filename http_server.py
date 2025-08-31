@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
-from chatbot import get_chatbot, ChatBot
+from services.chat_service import get_chat_service, ChatService
 
 
 class ChatMessage(BaseModel):
@@ -37,8 +37,8 @@ class ConversationHistory(BaseModel):
     user_id: str
 
 
-# Global chatbot instance
-chatbot_instance: Optional[ChatBot] = None
+# Global chat service instance
+chatbot_instance: Optional[ChatService] = None
 
 
 @asynccontextmanager
@@ -49,11 +49,11 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🌸 Starting Lily-Core HTTP Server")
     try:
-        chatbot_instance = get_chatbot()
+        chatbot_instance = get_chat_service()
         success = await chatbot_instance.initialize()
         if not success:
-            raise Exception("Failed to initialize chatbot")
-        print("✅ ChatBot initialized successfully")
+            raise Exception("Failed to initialize chat service")
+        print("✅ Chat service initialized successfully")
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         raise
@@ -63,13 +63,13 @@ async def lifespan(app: FastAPI):
     # Shutdown
     if chatbot_instance:
         await chatbot_instance.cleanup()
-        print("✅ ChatBot cleaned up")
+        print("✅ Chat service cleaned up")
 
 
 # Create FastAPI app
 app = FastAPI(
-    title="Lily-Core ChatBot API",
-    description="AI-powered chatbot with web search capabilities",
+    title="Lily-Core Chat Service API",
+    description="AI-powered chat service with web search capabilities and Agent Loop Architecture",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -89,7 +89,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "service": "Lily-Core ChatBot",
+        "service": "Lily-Core Chat Service",
         "chatbot_ready": chatbot_instance is not None
     }
 
@@ -97,23 +97,25 @@ async def health_check():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
     """
-    Send a message to the chatbot and get a response.
+    Send a message to the chat service and get a response.
 
-    The chatbot will intelligently decide whether to use web search tools
-    based on the context and content of your message.
+    The chat service uses the advanced agent loop system for complex reasoning.
     """
     if not chatbot_instance:
-        raise HTTPException(status_code=503, detail="ChatBot not initialized")
+        raise HTTPException(status_code=503, detail="Chat service not initialized")
 
     try:
-        # Process the chat message
-        response_text = await chatbot_instance.chat(message.message)
+        # Process the chat message using agent loop
+        result = await chatbot_instance.chat_with_agent_loop(
+            message=message.message,
+            user_id=message.user_id
+        )
 
         # Create response
         response = ChatResponse(
-            response=response_text,
-            user_id=message.user_id,
-            timestamp=datetime.now(timezone.utc).isoformat()
+            response=result['response'],
+            user_id=result['user_id'],
+            timestamp=result['timestamp']
         )
 
         return response
@@ -126,12 +128,10 @@ async def chat(message: ChatMessage):
 async def get_conversation_history(user_id: str):
     """Get conversation history for a user."""
     if not chatbot_instance:
-        raise HTTPException(status_code=503, detail="ChatBot not initialized")
+        raise HTTPException(status_code=503, detail="Chat service not initialized")
 
     try:
-        # For now, return the global conversation history
-        # In a multi-user setup, you'd store separate histories per user
-        history = chatbot_instance.get_conversation_history()
+        history = chatbot_instance.get_conversation_history(user_id)
 
         return ConversationHistory(
             history=history,
@@ -146,11 +146,14 @@ async def get_conversation_history(user_id: str):
 async def clear_conversation(user_id: str):
     """Clear conversation history for a user."""
     if not chatbot_instance:
-        raise HTTPException(status_code=503, detail="ChatBot not initialized")
+        raise HTTPException(status_code=503, detail="Chat service not initialized")
 
     try:
-        await chatbot_instance.clear_conversation()
-        return {"message": f"Conversation cleared for user {user_id}"}
+        success = await chatbot_instance.clear_conversation(user_id)
+        if success:
+            return {"message": f"Conversation cleared for user {user_id}"}
+        else:
+            return {"message": f"No conversation found for user {user_id}"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear conversation: {str(e)}")
@@ -160,12 +163,14 @@ async def clear_conversation(user_id: str):
 async def get_available_tools():
     """Get information about available tools."""
     if not chatbot_instance:
-        raise HTTPException(status_code=503, detail="ChatBot not initialized")
+        raise HTTPException(status_code=503, detail="Chat service not initialized")
 
     try:
+        tools = chatbot_instance.get_available_tools()
         return {
-            "tools": chatbot_instance.available_tools,
-            "description": "Tools automatically used by the chatbot when appropriate"
+            "tools": tools,
+            "count": len(tools),
+            "description": "Tools automatically used by the chat service when appropriate"
         }
 
     except Exception as e:
@@ -176,7 +181,7 @@ async def get_available_tools():
 async def root():
     """Root endpoint with API information."""
     return {
-        "message": "Welcome to Lily-Core ChatBot API 🌸",
+        "message": "Welcome to Lily-Core Chat Service API 🌸",
         "version": "1.0.0",
         "endpoints": {
             "GET /health": "Health check",
@@ -186,6 +191,7 @@ async def root():
             "GET /tools": "Get available tools information"
         },
         "features": [
+            "Advanced Agent Loop Architecture for multi-step reasoning",
             "Intelligent tool usage (decides when to search web)",
             "Conversation memory",
             "Automatic search mode selection (summary/detailed)",

@@ -32,6 +32,11 @@ class Config:
 
     # Web-Scout Integration
     WEB_SCOUT_URL: str = os.getenv('WEB_SCOUT_URL', 'http://web-scout:8000')
+    
+    # Other service URLs for monitoring
+    TTS_PROVIDER_URL: str = os.getenv('TTS_PROVIDER_URL', 'http://tts-provider:8000')
+    WEB_SCOUT_MONITORING_URL: str = os.getenv('WEB_SCOUT_MONITORING_URL', 'http://web-scout:8000')
+    TTS_PROVIDER_MONITORING_URL: str = os.getenv('TTS_PROVIDER_MONITORING_URL', 'http://tts-provider:8000')
 
     def __init__(self):
         """Validate configuration on initialization."""
@@ -66,7 +71,7 @@ class ChatSettings:
         self.conversation_context_window: int = 10  # Number of recent messages for context
 
         # Agent Loop Configuration
-        self.enable_agent_loop: bool = True  # Enable advanced agent loop system
+        self.enable_agent_loop: bool = True  # Enable advanced agent loop system (always enabled)
         self.max_loop_steps: int = int(os.getenv('MAX_LOOP_STEPS', '5'))  # Maximum steps in agent loop
         self.agent_loop_confidence_threshold: float = float(os.getenv('AGENT_LOOP_CONFIDENCE', '0.6'))  # Confidence threshold for actions
         self.agent_loop_timeout: int = int(os.getenv('AGENT_LOOP_TIMEOUT', '60'))  # Timeout for agent loop in seconds

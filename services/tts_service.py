@@ -24,7 +24,7 @@ from models.api import (
 class TTSProviderClient:
     """MCP-over-HTTP client for TTS-Provider service."""
 
-    def __init__(self, tts_provider_url: str = "http://tts-provider:9000"):
+    def __init__(self, tts_provider_url: str = "http://tts-provider:8001"):
         """Initialize TTS provider client with MCP-over-HTTP support."""
         self.tts_provider_url = tts_provider_url
         self.mcp_url = f"{self.tts_provider_url}/mcp"
@@ -38,7 +38,7 @@ class TTSProviderClient:
             total=3,
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
-            method_whitelist=["HEAD", "GET", "OPTIONS", "POST"]
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
         )
 
         adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -231,39 +231,49 @@ class TTSService:
         self.client_settings: Dict[str, TTSSettings] = {}
         self.active_streams: Dict[str, Any] = {}  # Track active audio streams
 
-    async def initialize(self) -> bool:
+    async def initialize(self, max_retries=3, retry_delay=2) -> bool:
         """
-        Initialize the TTS service and connect to TTS provider.
-
+        Initialize the TTS service and connect to TTS provider with retry logic.
+        
         Returns:
             bool: True if initialization was successful
         """
-        try:
-            # Initialize TTS provider client
-            self.provider_client = TTSProviderClient()
-
-            # Test connection to TTS provider
-            provider_info = await self.provider_client.get_provider_info()
-
-            if "error" not in provider_info:
-                self.logger.info("Connected to TTS provider successfully")
-                self.logger.info(f"Provider info: {provider_info}")
-
-                self._initialized = True
-                print("✅ TTS service initialized successfully")
+        for attempt in range(max_retries):
+            try:
+                # Initialize TTS provider client
+                self.provider_client = TTSProviderClient()
+                
+                # Test connection to TTS provider
+                provider_info = await self.provider_client.get_provider_info()
+                
+                if "error" not in provider_info:
+                    self.logger.info("Connected to TTS provider successfully")
+                    self.logger.info(f"Provider info: {provider_info}")
+                    
+                    self._initialized = True
+                    print("✅ TTS service initialized successfully")
+                    return True
+                else:
+                    self.logger.warning(f"TTS provider connection test failed: {provider_info['error']}")
+                    if attempt < max_retries - 1:
+                        self.logger.info(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    # Continue with degraded functionality
+                    self._initialized = True
+                    print("⚠️  TTS provider not available - service will operate in degraded mode")
+                    return True
+                    
+            except Exception as e:
+                self.logger.error(f"Failed to initialize TTS service: {str(e)}")
+                if attempt < max_retries - 1:
+                    self.logger.info(f"Retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                self._initialized = True  # Allow degraded operation
+                print("⚠️  TTS service initialization failed - continuing with reduced functionality")
                 return True
-            else:
-                self.logger.warning(f"TTS provider connection test failed: {provider_info['error']}")
-                # Continue with degraded functionality
-                self._initialized = True
-                print("⚠️  TTS provider not available - service will operate in degraded mode")
-                return True
-
-        except Exception as e:
-            self.logger.error(f"Failed to initialize TTS service: {str(e)}")
-            self._initialized = True  # Allow degraded operation
-            print("⚠️  TTS service initialization failed - continuing with reduced functionality")
-            return True
+        return True
 
     def store_client_settings(self, client_id: str, settings: TTSSettings) -> None:
         """

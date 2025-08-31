@@ -1,11 +1,12 @@
-# Lily-Core: AI-Powered ChatBot with MCP Protocol
+# Lily-Core: AI-Powered Chat Service with MCP Protocol
 
-A clean architecture implementation of an AI-powered chatbot that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration with Web-Scout.
+A clean architecture implementation of an AI-powered chat service that provides intelligent web search capabilities through JSON-RPC MCP (Model Context Protocol) integration with Web-Scout, enhanced with advanced Agent Loop Architecture for multi-step reasoning.
 
 ## Features
 
-- **AI ChatBot**: Powered by Google Gemini with conversation memory
+- **AI Chat Service**: Powered by Google Gemini with conversation memory and advanced Agent Loop Architecture
 - **Intelligent Web Search**: Context-aware web search using Web-Scout integration via MCP
+- **Advanced Agent Loop Architecture**: Multi-step reasoning and planning for complex tasks
 - **Search Modes**: Configurable summary and detailed analysis modes
 - **Clean Architecture**: Well-structured, maintainable, and testable codebase
 - **RESTful API**: Complete HTTP API with FastAPI

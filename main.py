@@ -64,8 +64,8 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Lily-Core ChatBot API",
-        description="AI-powered chatbot with web search capabilities using Clean Architecture",
+        title="Lily-Core Chat Service API",
+        description="AI-powered chat service with web search capabilities using Clean Architecture and Agent Loop",
         version="1.0.0",
         lifespan=lifespan
     )
@@ -100,7 +100,7 @@ def main():
     # Load environment variables
     load_dotenv()
 
-    print("🌸 Lily-Core - AI-Powered ChatBot 🌸")
+    print("🌸 Lily-Core - AI-Powered Chat Service 🌸")
     print("=" * 50)
 
     # Check if API key is configured

@@ -399,7 +399,7 @@ Provide your response:"""
             'response': context.final_response or "I wasn't able to generate a complete response.",
             'user_id': context.user_id,
             'timestamp': datetime.now().isoformat(),
-            'tool_used': any(result.get('tool_name') for result in context.tool_results),
+            'tool_used': context.tool_results[-1].get('tool_name') if context.tool_results else None,
             'agent_loop': {
                 'total_steps': context.current_step,
                 'tools_executed': len(context.tool_results),
