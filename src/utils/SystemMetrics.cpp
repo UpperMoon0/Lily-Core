@@ -1,5 +1,5 @@
 #include "lily/utils/SystemMetrics.hpp"
-#include "lily/services/ToolService.hpp"
+#include "lily/services/Service.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -117,7 +117,7 @@ SystemMetrics SystemMetricsCollector::get_system_metrics() {
     return metrics;
 }
 
-std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::services::ToolService* tool_service) {
+std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::services::Service* tool_service) {
     std::vector<ServiceStatus> services;
     
     // Add status for main services
@@ -134,88 +134,82 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
     }
     services.push_back(core_service);
     
-    ServiceStatus chat_service;
-    chat_service.name = "Chat Service";
-    chat_service.status = "healthy";
-    chat_service.details["description"] = "Handles chat interactions";
-    chat_service.last_updated = core_service.last_updated;
-    services.push_back(chat_service);
-    
-    ServiceStatus memory_service;
-    memory_service.name = "Memory Service";
-    memory_service.status = "healthy";
-    memory_service.details["description"] = "Manages conversation memory";
-    memory_service.last_updated = core_service.last_updated;
-    services.push_back(memory_service);
-    
-    ServiceStatus tts_service;
-    tts_service.name = "TTS Service";
-    tts_service.status = "healthy";
-    tts_service.details["description"] = "Text-to-speech processing";
-    tts_service.last_updated = core_service.last_updated;
-    services.push_back(tts_service);
-    
-    // Add tool discovery service status
-    ServiceStatus tool_service_status;
-    tool_service_status.name = "Tool Discovery Service";
-    tool_service_status.status = "healthy";
-    tool_service_status.details["description"] = "Discovers and manages external tools";
-    
+    // Add discovered services from Service class
     if (tool_service) {
-        size_t tool_count = tool_service->get_tool_count();
+        const auto& service_infos = tool_service->get_services_info();
         auto discovered_servers = tool_service->get_discovered_servers();
         auto tools_per_server = tool_service->get_tools_per_server();
+        size_t total_tools = tool_service->get_tool_count();
         
-        tool_service_status.details["discovered_tools"] = std::to_string(tool_count);
-        tool_service_status.details["active_servers"] = std::to_string(discovered_servers.size());
-        
-        if (!discovered_servers.empty()) {
-            std::string servers_str;
-            for (size_t i = 0; i < discovered_servers.size(); ++i) {
-                if (i > 0) servers_str += ", ";
-                servers_str += discovered_servers[i];
-            }
-            tool_service_status.details["server_list"] = servers_str;
-            
-            // Add detailed tool information per server
-            for (const auto& server_entry : tools_per_server) {
-                const std::string& server_url = server_entry.first;
-                const std::vector<nlohmann::json>& tools = server_entry.second;
+        // Add each discovered service with its correct name
+        for (const auto& service_info : service_infos) {
+            // Only add MCP services to the services list
+            if (service_info.mcp) {
+                ServiceStatus service_status;
+                service_status.name = service_info.name;  // Use the correct name from services.json
+                service_status.status = "unknown";  // Default status
                 
-                // Create a key for this server's tools
-                std::string server_key = "server_" + std::to_string(std::hash<std::string>{}(server_url)) + "_tools";
-                std::string tools_info = server_url + ": " + std::to_string(tools.size()) + " tools";
-                
-                // Add tool names
-                if (!tools.empty()) {
-                    tools_info += " [";
-                    for (size_t i = 0; i < tools.size(); ++i) {
-                        if (i > 0) tools_info += ", ";
-                        if (tools[i].contains("name")) {
-                            tools_info += tools[i]["name"].get<std::string>();
-                        } else {
-                            tools_info += "unnamed_tool";
-                        }
+                // Check if this service is active (discovered)
+                bool is_active = false;
+                for (const auto& server_url : discovered_servers) {
+                    if (server_url == service_info.url) {
+                        is_active = true;
+                        break;
                     }
-                    tools_info += "]";
                 }
                 
-                tool_service_status.details[server_key] = tools_info;
+                service_status.status = is_active ? "healthy" : "down";
+                service_status.details["description"] = "External MCP service";
+                service_status.details["url"] = service_info.url;
+                service_status.details["type"] = "MCP Server";
+                
+                // Add tool count for MCP servers
+                if (is_active) {
+                    auto it = tools_per_server.find(service_info.url);
+                    if (it != tools_per_server.end()) {
+                        service_status.details["tool_count"] = std::to_string(it->second.size());
+                        
+                        // Add detailed tool information
+                        std::string tools_info = "";
+                        for (size_t i = 0; i < it->second.size(); ++i) {
+                            if (i > 0) tools_info += "|";
+                            const auto& tool = it->second[i];
+                            if (tool.contains("name")) {
+                                tools_info += tool["name"].get<std::string>();
+                            } else {
+                                tools_info += "unnamed_tool";
+                            }
+                            tools_info += ":";
+                            if (tool.contains("description")) {
+                                tools_info += tool["description"].get<std::string>();
+                            } else {
+                                tools_info += "No description";
+                            }
+                        }
+                        service_status.details["tools"] = tools_info;
+                    }
+                }
+                
+                service_status.last_updated = core_service.last_updated;
+                services.push_back(service_status);
             }
         }
-    } else {
-        tool_service_status.details["discovered_tools"] = "0";
-        tool_service_status.details["active_servers"] = "0";
-        tool_service_status.details["server_list"] = "No tool service provided";
+        
+        // Add summary information
+        ServiceStatus mcp_summary;
+        mcp_summary.name = "MCP Services Summary";
+        mcp_summary.status = "healthy";
+        mcp_summary.details["active_mcp_servers"] = std::to_string(discovered_servers.size());
+        mcp_summary.details["total_tools"] = std::to_string(total_tools);
+        mcp_summary.details["description"] = "Summary of all MCP services";
+        mcp_summary.last_updated = core_service.last_updated;
+        services.push_back(mcp_summary);
     }
-    
-    tool_service_status.last_updated = core_service.last_updated;
-    services.push_back(tool_service_status);
     
     return services;
 }
 
-MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::ToolService* tool_service) {
+MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::Service* tool_service) {
     MonitoringData data;
     
     data.status = "healthy";

@@ -1,6 +1,6 @@
 #include <lily/services/AgentLoopService.hpp>
 #include <lily/services/MemoryService.hpp>
-#include <lily/services/ToolService.hpp>
+#include <lily/services/Service.hpp>
 #include <cpprest/http_client.h>
 #include <cpprest/json.h>
 #include <iostream>
@@ -9,7 +9,7 @@
 
 namespace lily {
     namespace services {
-        AgentLoopService::AgentLoopService(MemoryService& memoryService, ToolService& toolService)
+        AgentLoopService::AgentLoopService(MemoryService& memoryService, Service& toolService)
             : _memoryService(memoryService), _toolService(toolService) {}
 
         std::string AgentLoopService::run_loop(const std::string& user_message, const std::string& user_id) {

@@ -5,12 +5,13 @@
 #include "lily/services/AgentLoopService.hpp"
 #include "lily/services/ChatService.hpp"
 #include "lily/services/MemoryService.hpp"
-#include "lily/services/ToolService.hpp"
+#include "lily/services/Service.hpp"
 #include "lily/services/TTSService.hpp"
 #include "lily/services/HTTPServer.hpp"
 #include <thread>
 #include <chrono>
 #include <future>
+#include <nlohmann/json.hpp>
 
 using namespace lily::services;
 
@@ -30,18 +31,39 @@ int main() {
     }
 
     auto tts_service = std::make_shared<TTSService>();
-    auto tool_service = std::make_shared<ToolService>();
+    auto tool_service = std::make_shared<Service>();
     tool_service->start_periodic_discovery();  // Start periodic tool discovery
+    
+    // Give some time for service discovery to complete
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Try to connect to TTS provider
+    auto discovered_servers = tool_service->get_discovered_servers();
+    auto tools_per_server = tool_service->get_tools_per_server();
+    
+    // Look for TTS provider in the discovered services
+    for (const auto& service : tool_service->get_services_info()) {
+        if (service.id == "tts-provider") {
+            std::cout << "Found TTS provider at " << service.url << std::endl;
+            if (tts_service->connect(service.url)) {
+                std::cout << "Connected to TTS provider successfully." << std::endl;
+            } else {
+                std::cerr << "Failed to connect to TTS provider." << std::endl;
+            }
+            break;
+        }
+    }
+    
     auto memory_service = std::make_shared<MemoryService>();
-    auto agent_loop_service = std::make_shared<AgentLoopService>(*memory_service, *tool_service);
+    auto agent_loop_service = std::make_shared<AgentLoopService>(*memory_service, *tool_service.get());
     auto chat_service = std::make_shared<ChatService>(
         *agent_loop_service,
         *memory_service,
-        *tool_service,
+        *tool_service.get(),
         *tts_service
     );
 
-    http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service);
+    http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get());
     http_server_ptr->start();
 
     signal(SIGINT, signal_handler);

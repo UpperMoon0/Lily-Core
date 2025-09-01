@@ -1,6 +1,6 @@
 #include "lily/services/HTTPServer.hpp"
 #include "lily/services/ChatService.hpp"
-#include "lily/services/ToolService.hpp"
+#include "lily/services/Service.hpp"
 #include "lily/utils/SystemMetrics.hpp"
 #include <cpprest/http_msg.h>
 #include <iostream>
@@ -14,7 +14,7 @@ using namespace web::http::experimental::listener;
 namespace lily {
 namespace services {
 
-HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, ToolService& tool_service)
+HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
       _chat_service(chat_service),
       _memory_service(memory_service),
@@ -50,7 +50,22 @@ void HTTPServer::handle_post(http_request request) {
                     auto message = json_value.at("message").as_string();
                     auto user_id = json_value.at("user_id").as_string();
                     
-                    std::string response_message = _chat_service.handle_chat_message(message, user_id);
+                    // Extract TTS parameters if present
+                    lily::services::ChatParameters chat_params;
+                    if (json_value.has_field("tts") && json_value.at("tts").is_object()) {
+                        const auto& tts_json = json_value.at("tts");
+                        chat_params.enable_tts = tts_json.has_field("enabled") ? tts_json.at("enabled").as_bool() : false;
+                        
+                        if (tts_json.has_field("params") && tts_json.at("params").is_object()) {
+                            const auto& params_json = tts_json.at("params");
+                            chat_params.tts_params.speaker = params_json.has_field("speaker") ? params_json.at("speaker").as_integer() : 0;
+                            chat_params.tts_params.sample_rate = params_json.has_field("sample_rate") ? params_json.at("sample_rate").as_integer() : 24000;
+                            chat_params.tts_params.model = params_json.has_field("model") ? params_json.at("model").as_string() : "edge";
+                            chat_params.tts_params.lang = params_json.has_field("lang") ? params_json.at("lang").as_string() : "en-US";
+                        }
+                    }
+                    
+                    std::string response_message = _chat_service.handle_chat_message(message, user_id, chat_params);
 
                     json::value response_json;
                     response_json["response"] = json::value::string(response_message);

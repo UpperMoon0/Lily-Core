@@ -1,0 +1,16 @@
+{
+  "services": [
+    {
+      "id": "web-scout",
+      "name": "Web Scout",
+      "url": "http://web-scout:8000",
+      "mcp": true
+    },
+    {
+      "id": "tts-provider",
+      "name": "TTS Provider",
+      "url": "http://tts-provider:9000",
+      "mcp": false
+    }
+  ]
+}

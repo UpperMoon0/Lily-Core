@@ -53,7 +53,7 @@ WORKDIR /app
 COPY --from=builder /app/build/lily_core .
 
 # Copy the tool servers configuration
-COPY tool_servers.json .
+COPY services.json .
 
 # Expose the port the application runs on
 EXPOSE 8000

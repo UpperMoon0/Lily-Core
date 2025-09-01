@@ -9,7 +9,7 @@
 namespace lily {
 namespace services {
     class MemoryService;
-    class ToolService;  // Forward declaration
+    class Service;  // Forward declaration
 }
 namespace services {
 
@@ -17,7 +17,7 @@ class ChatService;
 
 class HTTPServer {
 public:
-    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, ToolService& tool_service);
+    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service);
     ~HTTPServer();
 
     void start();
@@ -33,7 +33,7 @@ private:
     web::http::experimental::listener::http_listener _listener;
     ChatService& _chat_service;
     MemoryService& _memory_service;
-    ToolService& _tool_service;
+    Service& _tool_service;
 };
 
 } // namespace services

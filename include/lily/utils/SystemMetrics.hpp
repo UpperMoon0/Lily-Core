@@ -13,7 +13,7 @@
 
 namespace lily {
 namespace services {
-    class ToolService;  // Forward declaration
+    class Service;  // Forward declaration
 }
 
 namespace utils {
@@ -48,8 +48,8 @@ public:
     ~SystemMetricsCollector();
     
     SystemMetrics get_system_metrics();
-    std::vector<ServiceStatus> get_service_statuses(lily::services::ToolService* tool_service = nullptr);
-    MonitoringData get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::ToolService* tool_service = nullptr);
+    std::vector<ServiceStatus> get_service_statuses(lily::services::Service* tool_service = nullptr);
+    MonitoringData get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::Service* tool_service = nullptr);
     
 private:
     std::chrono::steady_clock::time_point start_time;

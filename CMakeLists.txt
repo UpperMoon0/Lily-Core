@@ -25,7 +25,7 @@ set(SOURCES
     src/services/AgentLoopService.cpp
     src/services/ChatService.cpp
     src/services/MemoryService.cpp
-    src/services/ToolService.cpp
+    src/services/Service.cpp
     src/services/TTSService.cpp
     src/services/HTTPServer.cpp
     src/utils/SystemMetrics.cpp
