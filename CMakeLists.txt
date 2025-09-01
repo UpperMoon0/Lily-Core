@@ -28,6 +28,7 @@ set(SOURCES
     src/services/ToolService.cpp
     src/services/TTSService.cpp
     src/services/HTTPServer.cpp
+    src/utils/SystemMetrics.cpp
 )
 
 # Create executable

@@ -27,6 +27,7 @@ private:
     void handle_get(web::http::http_request request);
     void handle_delete(web::http::http_request request);
     void handle_options(web::http::http_request request);
+    void handle_monitoring(web::http::http_request request);
 
     web::http::experimental::listener::http_listener _listener;
     ChatService& _chat_service;

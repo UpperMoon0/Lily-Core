@@ -29,7 +29,9 @@ namespace lily {
 
             for (const auto& msg : conversation) {
                 web::json::value content_obj = web::json::value::object();
-                content_obj["role"] = web::json::value::string(msg.role);
+                // Map "assistant" role to "model" for Gemini API
+                std::string role = (msg.role == "assistant") ? "model" : msg.role;
+                content_obj["role"] = web::json::value::string(role);
                 content_obj["parts"] = web::json::value::array(1);
                 content_obj["parts"][0]["text"] = web::json::value::string(msg.content);
                 contents_json[index++] = content_obj;
