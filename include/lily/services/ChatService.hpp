@@ -18,7 +18,7 @@ namespace lily {
                 TTSService& ttsService
             );
 
-            void handle_chat_message(const std::string& message, const std::string& user_id);
+            std::string handle_chat_message(const std::string& message, const std::string& user_id);
 
         private:
             AgentLoopService& _agentLoopService;

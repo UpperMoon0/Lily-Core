@@ -10,7 +10,7 @@ namespace lily {
         class AgentLoopService {
         public:
             AgentLoopService(MemoryService& memoryService, ToolService& toolService);
-            void run_loop(const std::string& user_message, const std::string& user_id);
+            std::string run_loop(const std::string& user_message, const std::string& user_id);
 
         private:
             MemoryService& _memoryService;

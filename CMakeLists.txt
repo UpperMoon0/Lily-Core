@@ -13,7 +13,11 @@ else()
 endif()
 
 # Include directories
-include_directories(include)
+include_directories(
+    include
+    third_party/json/include
+    /usr/include/cpprest
+)
 
 # Source files
 set(SOURCES
@@ -23,8 +27,11 @@ set(SOURCES
     src/services/MemoryService.cpp
     src/services/ToolService.cpp
     src/services/TTSService.cpp
-    src/services/WebSocketManager.cpp
+    src/services/HTTPServer.cpp
 )
 
 # Create executable
 add_executable(lily_core ${SOURCES})
+
+# Link libraries
+target_link_libraries(lily_core PRIVATE pthread cpprest crypto ssl)

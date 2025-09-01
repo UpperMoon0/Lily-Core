@@ -6,10 +6,23 @@ namespace lily {
     namespace services {
 
         WebSocketManager::WebSocketManager() {
+            _server.init_asio();
+            _server.set_open_handler([this](ConnectionHandle conn) {
+                this->connect(conn);
+            });
+
+            _server.set_close_handler([this](ConnectionHandle conn) {
+                this->disconnect(conn);
+            });
+
+            _server.set_message_handler([this](ConnectionHandle conn, Server::message_ptr msg) {
+                this->on_message(conn, msg->get_payload());
+            });
             std::cout << "WebSocketManager initialized." << std::endl;
         }
 
         WebSocketManager::~WebSocketManager() {
+            stop();
             std::cout << "WebSocketManager shutting down." << std::endl;
         }
 
@@ -37,5 +50,34 @@ namespace lily {
             // and send the message to each client.
         }
 
+        void WebSocketManager::on_message(const ConnectionHandle& conn, const std::string& message) {
+            if (_message_handler) {
+                _message_handler(message);
+            }
+        }
+        void WebSocketManager::set_message_handler(const MessageHandler& handler) {
+            _message_handler = handler;
+        }
+
+        void WebSocketManager::run(uint16_t port) {
+            try {
+                _server.listen(port);
+                _server.start_accept();
+                _thread = std::thread([this]() { _server.run(); });
+            } catch (const std::exception& e) {
+                std::cerr << "Error in WebSocketManager: " << e.what() << std::endl;
+            }
+        }
+
+        void WebSocketManager::stop() {
+            if (_thread.joinable()) {
+                _server.stop_listening();
+                for (const auto& conn : _connections) {
+                    _server.close(conn, websocketpp::close::status::going_away, "Server shutting down");
+                }
+                _server.stop();
+                _thread.join();
+            }
+        }
     }
 }

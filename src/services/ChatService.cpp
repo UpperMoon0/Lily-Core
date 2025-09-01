@@ -1,5 +1,6 @@
 #include <lily/services/ChatService.hpp>
 #include <iostream>
+#include <chrono>
 
 namespace lily {
     namespace services {
@@ -13,27 +14,27 @@ namespace lily {
             _toolService(toolService),
             _ttsService(ttsService) {}
 
-        void ChatService::handle_chat_message(const std::string& message, const std::string& user_id) {
+        std::string ChatService::handle_chat_message(const std::string& message, const std::string& user_id) {
             std::cout << "Handling chat message for user: " << user_id << std::endl;
 
             // 1. Save user message to memory
             std::cout << "Saving user message to memory..." << std::endl;
-            // _memoryService.add_message(user_id, "user", message);
+            _memoryService.add_message(user_id, "user", message);
 
             // 2. Get response from agent loop
             std::cout << "Invoking agent loop to get a response..." << std::endl;
-            // auto agent_response = _agentLoopService.execute_agent_loop(message, user_id);
-            std::string agent_response = "This is a placeholder response from the agent loop.";
+            std::string agent_response = _agentLoopService.run_loop(message, user_id);
 
             // 3. Save agent response to memory
             std::cout << "Saving agent response to memory..." << std::endl;
-            // _memoryService.add_message(user_id, "assistant", agent_response);
+            _memoryService.add_message(user_id, "assistant", agent_response);
 
-            // 4. Synthesize the response to audio
+            // 4. Synthesize the response to audio (placeholder)
             std::cout << "Synthesizing agent response to audio..." << std::endl;
-            // _ttsService.synthesize(agent_response);
+            // _ttsService.synthesize(agent_response); // TODO: implement TTS
 
             std::cout << "Chat message processed." << std::endl;
+            return agent_response;
         }
     }
 }
