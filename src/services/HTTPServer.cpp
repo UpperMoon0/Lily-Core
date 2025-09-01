@@ -1,5 +1,6 @@
 #include "lily/services/HTTPServer.hpp"
 #include "lily/services/ChatService.hpp"
+#include "lily/services/ToolService.hpp"
 #include "lily/utils/SystemMetrics.hpp"
 #include <cpprest/http_msg.h>
 #include <iostream>
@@ -13,10 +14,11 @@ using namespace web::http::experimental::listener;
 namespace lily {
 namespace services {
 
-HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service)
+HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, ToolService& tool_service)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
       _chat_service(chat_service),
-      _memory_service(memory_service) {
+      _memory_service(memory_service),
+      _tool_service(tool_service) {
     _listener.support(methods::POST, std::bind(&HTTPServer::handle_post, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_get, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_monitoring, this, std::placeholders::_1));
@@ -156,7 +158,7 @@ void HTTPServer::handle_monitoring(http_request request) {
             lily::utils::SystemMetricsCollector metrics_collector;
             
             // Get monitoring data
-            auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0");
+            auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0", &_tool_service);
             
             // Build JSON response
             web::json::value response_json = web::json::value::object();

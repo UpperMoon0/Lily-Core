@@ -52,6 +52,9 @@ WORKDIR /app
 # Copy the built executable from the builder stage
 COPY --from=builder /app/build/lily_core .
 
+# Copy the tool servers configuration
+COPY tool_servers.json .
+
 # Expose the port the application runs on
 EXPOSE 8000
 

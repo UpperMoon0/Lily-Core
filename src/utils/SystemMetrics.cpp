@@ -1,4 +1,5 @@
 #include "lily/utils/SystemMetrics.hpp"
+#include "lily/services/ToolService.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -116,7 +117,7 @@ SystemMetrics SystemMetricsCollector::get_system_metrics() {
     return metrics;
 }
 
-std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses() {
+std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::services::ToolService* tool_service) {
     std::vector<ServiceStatus> services;
     
     // Add status for main services
@@ -154,10 +155,67 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses() {
     tts_service.last_updated = core_service.last_updated;
     services.push_back(tts_service);
     
+    // Add tool discovery service status
+    ServiceStatus tool_service_status;
+    tool_service_status.name = "Tool Discovery Service";
+    tool_service_status.status = "healthy";
+    tool_service_status.details["description"] = "Discovers and manages external tools";
+    
+    if (tool_service) {
+        size_t tool_count = tool_service->get_tool_count();
+        auto discovered_servers = tool_service->get_discovered_servers();
+        auto tools_per_server = tool_service->get_tools_per_server();
+        
+        tool_service_status.details["discovered_tools"] = std::to_string(tool_count);
+        tool_service_status.details["active_servers"] = std::to_string(discovered_servers.size());
+        
+        if (!discovered_servers.empty()) {
+            std::string servers_str;
+            for (size_t i = 0; i < discovered_servers.size(); ++i) {
+                if (i > 0) servers_str += ", ";
+                servers_str += discovered_servers[i];
+            }
+            tool_service_status.details["server_list"] = servers_str;
+            
+            // Add detailed tool information per server
+            for (const auto& server_entry : tools_per_server) {
+                const std::string& server_url = server_entry.first;
+                const std::vector<nlohmann::json>& tools = server_entry.second;
+                
+                // Create a key for this server's tools
+                std::string server_key = "server_" + std::to_string(std::hash<std::string>{}(server_url)) + "_tools";
+                std::string tools_info = server_url + ": " + std::to_string(tools.size()) + " tools";
+                
+                // Add tool names
+                if (!tools.empty()) {
+                    tools_info += " [";
+                    for (size_t i = 0; i < tools.size(); ++i) {
+                        if (i > 0) tools_info += ", ";
+                        if (tools[i].contains("name")) {
+                            tools_info += tools[i]["name"].get<std::string>();
+                        } else {
+                            tools_info += "unnamed_tool";
+                        }
+                    }
+                    tools_info += "]";
+                }
+                
+                tool_service_status.details[server_key] = tools_info;
+            }
+        }
+    } else {
+        tool_service_status.details["discovered_tools"] = "0";
+        tool_service_status.details["active_servers"] = "0";
+        tool_service_status.details["server_list"] = "No tool service provided";
+    }
+    
+    tool_service_status.last_updated = core_service.last_updated;
+    services.push_back(tool_service_status);
+    
     return services;
 }
 
-MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version) {
+MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::ToolService* tool_service) {
     MonitoringData data;
     
     data.status = "healthy";
@@ -174,7 +232,7 @@ MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& se
     }
     
     data.metrics = get_system_metrics();
-    data.services = get_service_statuses();
+    data.services = get_service_statuses(tool_service);
     
     // Add some details
     data.details["description"] = "Lily Core Monitoring Service";
