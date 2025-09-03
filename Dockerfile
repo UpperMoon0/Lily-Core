@@ -57,6 +57,7 @@ COPY services.json .
 
 # Expose the port the application runs on
 EXPOSE 8000
+EXPOSE 9002
 
 # Command to run the executable
 CMD ["./lily_core"]

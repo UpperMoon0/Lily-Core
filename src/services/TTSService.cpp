@@ -23,29 +23,67 @@ namespace lily {
             }
         }
 
-        bool TTSService::connect(const std::string& provider_url) {
-            std::cout << "Connecting to TTS provider at " << provider_url << std::endl;
-            _provider_url = provider_url;
-            _is_connected = initialize_websocket();
-            return _is_connected;
+        bool TTSService::connect(const std::string& provider_url, const std::string& websocket_url) {
+            _provider_url = provider_url; // Set the provider URL first
+            _websocket_url = websocket_url; // Set the websocket URL
+            const int max_retries = 5;
+            const int retry_delay_ms = 2000;
+
+            // Check readiness before attempting to connect
+            if (!is_ready()) {
+                std::cerr << "TTS provider is not ready." << std::endl;
+                return false;
+            }
+
+            for (int i = 0; i < max_retries; ++i) {
+                std::cout << "Connecting to TTS provider at " << _provider_url << " (Attempt " << i + 1 << "/" << max_retries << ")" << std::endl;
+                if (initialize_websocket()) {
+                    _is_connected = true;
+                    return true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
+            }
+
+            std::cerr << "Failed to connect to TTS provider after " << max_retries << " attempts." << std::endl;
+            _is_connected = false;
+            return false;
         }
 
         bool TTSService::initialize_websocket() {
             try {
-                // Create WebSocket client
-                _websocket_client = std::make_unique<websocket_client>();
+                // Create WebSocket client with configuration
+                websocket_client_config config;
+                config.set_validate_certificates(false); // Disable certificate validation for internal communication
+                _websocket_client = std::make_unique<websocket_client>(config);
                 
-                // Parse the provider URL to extract host and port
-                web::uri provider_uri(utility::conversions::to_string_t(_provider_url));
-                web::uri_builder builder(provider_uri);
-                if (provider_uri.scheme().empty()) {
-                    builder.set_scheme(U("ws"));
+                // Use the websocket_url directly if provided, otherwise transform the provider_url
+                std::string url_to_use = _websocket_url.empty() ? _provider_url : _websocket_url;
+                
+                if (!_websocket_url.empty()) {
+                    // Use the websocket_url directly
+                    web::uri websocket_uri(utility::conversions::to_string_t(url_to_use));
+                    auto task = _websocket_client->connect(websocket_uri);
+                    task.wait();
+                } else {
+                    // Transform the provider URL to extract host and port (fallback for backward compatibility)
+                    web::uri provider_uri(utility::conversions::to_string_t(_provider_url));
+                    web::uri_builder builder(provider_uri);
+                    
+                    // Convert HTTP/HTTPS schemes to WebSocket schemes
+                    std::string scheme = utility::conversions::to_utf8string(provider_uri.scheme());
+                    if (scheme == "http") {
+                        builder.set_scheme(U("ws"));
+                    } else if (scheme == "https") {
+                        builder.set_scheme(U("wss"));
+                    }
+                    
+                    // Set default port if not specified
+                    if (provider_uri.port() == 0) {
+                        builder.set_port(9000);
+                    }
+                    auto task = _websocket_client->connect(builder.to_uri());
+                    task.wait();
                 }
-                if (provider_uri.port() == 0) {
-                    builder.set_port(9000);
-                }
-                auto task = _websocket_client->connect(builder.to_uri());
-                task.wait();
                 
                 std::cout << "WebSocket connection established." << std::endl;
                 return true;
@@ -56,12 +94,26 @@ namespace lily {
         }
 
         std::vector<uint8_t> TTSService::synthesize_speech(const std::string& text, const TTSParameters& params) {
-            if (!_is_connected || !_websocket_client) {
-                std::cerr << "TTS service not connected." << std::endl;
+            // Always ensure we have a fresh connection for each request since the server closes it after sending audio
+            if (_is_connected && _websocket_client) {
+                // Close existing connection if it's still open
+                try {
+                    close();
+                } catch (const std::exception& e) {
+                    std::cerr << "Error closing existing connection: " << e.what() << std::endl;
+                }
+            }
+            
+            // Establish a new connection for this request
+            std::cout << "Establishing new connection for TTS request..." << std::endl;
+            if (!connect(_provider_url, _websocket_url)) {
+                std::cerr << "Failed to connect to TTS service." << std::endl;
                 return {};
             }
-
+        
             try {
+                std::cout << "=== Starting TTS synthesis ===" << std::endl;
+                
                 // Create JSON request
                 nlohmann::json request;
                 request["text"] = text;
@@ -69,62 +121,96 @@ namespace lily {
                 request["sample_rate"] = params.sample_rate;
                 request["model"] = params.model;
                 request["lang"] = params.lang;
-
+        
+                std::cout << "Sending TTS request with text: " << (text.length() > 50 ? text.substr(0, 50) + "..." : text) << std::endl;
+                std::cout << "Request params - Speaker: " << params.speaker << ", Sample rate: " << params.sample_rate
+                          << ", Model: " << params.model << ", Lang: " << params.lang << std::endl;
+        
                 // Send request
                 std::string request_str = request.dump();
+                std::cout << "Request JSON: " << request_str << std::endl;
+                
                 websocket_outgoing_message msg;
                 msg.set_utf8_message(request_str);
                 
+                std::cout << "Sending message..." << std::endl;
                 auto send_task = _websocket_client->send(msg);
+                std::cout << "Waiting for send task to complete..." << std::endl;
                 send_task.wait();
-
-                // Wait for response
+                std::cout << "Send task completed." << std::endl;
+        
+                // Wait for response (no timeout for now to avoid compilation issues)
+                std::cout << "Waiting for first response..." << std::endl;
                 auto receive_task = _websocket_client->receive();
+                std::cout << "Receive task created, waiting..." << std::endl;
                 receive_task.wait();
+                std::cout << "First response received." << std::endl;
                 
                 auto response_msg = receive_task.get();
+                std::cout << "First response message type: " << static_cast<int>(response_msg.message_type()) << std::endl;
+                
                 if (response_msg.message_type() == websocket_message_type::text_message) {
-                    // First message should be metadata
                     std::string metadata_str = response_msg.extract_string().get();
+                    std::cout << "Received metadata: " << metadata_str << std::endl;
                     nlohmann::json metadata = nlohmann::json::parse(metadata_str);
                     
                     if (metadata.value("status", "") == "success") {
-                        // Wait for audio data
-                        auto audio_task = _websocket_client->receive();
-                        audio_task.wait();
+                        std::vector<uint8_t> all_audio_data;
                         
-                        auto audio_msg = audio_task.get();
-                        if (audio_msg.message_type() == websocket_message_type::binary_message) {
-                            // Get binary data
-                            auto audio_buffer = audio_msg.body();
-                            concurrency::streams::container_buffer<std::vector<uint8_t>> buffer;
-                            audio_buffer.read_to_end(buffer).get();
-                            std::vector<uint8_t> audio_data = buffer.collection();
-                            
-                            std::cout << "Received " << audio_data.size() << " bytes of audio data." << std::endl;
-                            return audio_data;
-                        } else if (audio_msg.message_type() == websocket_message_type::text_message) {
-                            // Handle error message
-                            std::string error_str = audio_msg.extract_string().get();
-                            nlohmann::json error_json = nlohmann::json::parse(error_str);
-                            std::cerr << "TTS Error: " << error_json.value("message", "Unknown error") << std::endl;
+                        // Continue receiving messages until we get a close message
+                        bool receiving_audio = true;
+                        while (receiving_audio) {
+                            try {
+                                auto audio_task = _websocket_client->receive();
+                                audio_task.wait();
+                                auto audio_msg = audio_task.get();
+                                
+                                if (audio_msg.message_type() == websocket_message_type::binary_message) {
+                                    auto chunk_buffer = audio_msg.body();
+                                    concurrency::streams::container_buffer<std::vector<uint8_t>> container_buffer;
+                                    chunk_buffer.read_to_end(container_buffer).get();
+                                    std::vector<uint8_t> chunk_data = container_buffer.collection();
+                                    all_audio_data.insert(all_audio_data.end(), chunk_data.begin(), chunk_data.end());
+                                    std::cout << "Received chunk of " << chunk_data.size() << " bytes." << std::endl;
+                                } else if (static_cast<int>(audio_msg.message_type()) == 3) { // Close message
+                                    std::cout << "Connection closed by server after receiving audio data." << std::endl;
+                                    receiving_audio = false;
+                                } else {
+                                    std::cout << "Received non-binary message (type: " << static_cast<int>(audio_msg.message_type()) << ")." << std::endl;
+                                    receiving_audio = false;
+                                }
+                            } catch (const std::exception& e) {
+                                std::cerr << "Error receiving audio data: " << e.what() << std::endl;
+                                receiving_audio = false;
+                            }
                         }
-                    } else {
-                        std::cerr << "TTS Request failed: " << metadata.value("message", "Unknown error") << std::endl;
+                        
+                        if (!all_audio_data.empty()) {
+                            std::cout << "Total audio data received: " << all_audio_data.size() << " bytes." << std::endl;
+                            std::cout << "=== TTS synthesis completed successfully ===" << std::endl;
+                            return all_audio_data;
+                        } else {
+                            std::cerr << "No audio data received from TTS provider." << std::endl;
+                        }
                     }
-                } else if (response_msg.message_type() == websocket_message_type::binary_message) {
-                    // Handle case where we get binary data directly
-                    auto audio_buffer = response_msg.body();
-                    concurrency::streams::container_buffer<std::vector<uint8_t>> buffer;
-                    audio_buffer.read_to_end(buffer).get();
-                    std::vector<uint8_t> audio_data = buffer.collection();
-                    
-                    std::cout << "Received " << audio_data.size() << " bytes of audio data." << std::endl;
-                    return audio_data;
+                } else if (static_cast<int>(response_msg.message_type()) == 3) { // Close message
+                    std::cout << "Connection closed by server." << std::endl;
+                    _is_connected = false;
+                    std::cerr << "TTS Request failed: Connection closed by server before audio data was received." << std::endl;
+                } else {
+                    std::cerr << "Unexpected message type: " << static_cast<int>(response_msg.message_type()) << std::endl;
                 }
             } catch (const std::exception& e) {
                 std::cerr << "Error synthesizing speech: " << e.what() << std::endl;
+                // Print stack trace if available
+                #ifdef _MSC_VER
+                // For MSVC, we could use CaptureStackBackTrace but it's complex
+                #else
+                // For other compilers, we could use backtrace() but it's also complex
+                #endif
             }
+            
+            std::cout << "=== TTS synthesis failed ===" << std::endl;
             
             return {};
         }
@@ -141,6 +227,26 @@ namespace lily {
                 _websocket_client.reset();
             }
             _is_connected = false;
+        }
+
+        bool TTSService::is_ready() {
+            // Check the /ready endpoint of the TTS provider
+            try {
+                web::uri provider_uri(utility::conversions::to_string_t(_provider_url));
+                web::uri_builder builder;
+                builder.set_scheme(U("http"));
+                builder.set_host(provider_uri.host());
+                builder.set_port(8001); // HTTP readiness endpoint is on port 8001
+                builder.set_path(U("/ready"));
+
+                web::http::client::http_client client(builder.to_uri());
+                web::http::http_request request(web::http::methods::GET);
+                auto response = client.request(request).get();
+                return response.status_code() == web::http::status_codes::OK;
+            } catch (const std::exception& e) {
+                std::cerr << "Error checking TTS provider readiness: " << e.what() << std::endl;
+                return false;
+            }
         }
     }
 }

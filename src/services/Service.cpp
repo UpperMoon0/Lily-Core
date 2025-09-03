@@ -24,6 +24,9 @@ namespace lily {
 
         void Service::load_services() {
             try {
+                // Clear the existing services before loading new ones
+                _services.clear();
+                
                 std::ifstream file("services.json");
                 if (file.is_open()) {
                     nlohmann::json j;
@@ -31,11 +34,12 @@ namespace lily {
                     if (j.contains("services") && j["services"].is_array()) {
                         for (const auto& service : j["services"]) {
                             if (service.is_object() &&
-                                service.contains("id") && service.contains("name") && service.contains("url") && service.contains("mcp")) {
+                                service.contains("id") && service.contains("name") && service.contains("http_url") && service.contains("mcp")) {
                                 ServiceInfo info;
                                 info.id = service["id"].get<std::string>();
                                 info.name = service["name"].get<std::string>();
-                                info.url = service["url"].get<std::string>();
+                                info.http_url = service["http_url"].get<std::string>();
+                                info.websocket_url = service.value("websocket_url", ""); // Default to empty string if not present
                                 info.mcp = service["mcp"].get<bool>();
                                 _services.push_back(info);
                             }
@@ -59,12 +63,12 @@ namespace lily {
                 // Only discover tools from MCP-enabled services
                 if (service.mcp) {
                     try {
-                        auto tools = discover_tools_from_server(service.url);
+                        auto tools = discover_tools_from_server(service.http_url);
                         _tools.insert(_tools.end(), tools.begin(), tools.end());
-                        _discovered_servers.push_back(service.url);
-                        _tools_per_server[service.url] = tools;
+                        _discovered_servers.push_back(service.http_url);
+                        _tools_per_server[service.http_url] = tools;
                     } catch (const std::exception& e) {
-                        std::cerr << "Failed to discover tools from " << service.url << " (" << service.name << "): " << e.what() << std::endl;
+                        std::cerr << "Failed to discover tools from " << service.http_url << " (" << service.name << "): " << e.what() << std::endl;
                     }
                 }
             }
@@ -117,6 +121,7 @@ namespace lily {
             _discovery_future = std::async(std::launch::async, [this]() {
                 while (_discovery_running) {
                     try {
+                        load_services(); // Reload services from services.json
                         discover_tools();
                         std::this_thread::sleep_for(std::chrono::seconds(30)); // Discover every 30 seconds
                     } catch (const std::exception& e) {

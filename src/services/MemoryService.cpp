@@ -32,5 +32,7 @@ void MemoryService::clear_conversation(const std::string& user_id) {
 }
 
 std::string MemoryService::summarize_conversation(const std::string& user_id) {
+    // Suppress unused parameter warning
+    (void)user_id;
     return "This is a placeholder summary.";
 }

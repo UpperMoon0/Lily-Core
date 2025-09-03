@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <map>
 #include <websocketpp/server.hpp>
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <functional>
@@ -27,14 +28,19 @@ namespace lily {
             void disconnect(const ConnectionHandle& conn);
             void set_message_handler(const MessageHandler& handler);
             void broadcast(const std::string& message);
-            void run(uint16_t port);
+            void broadcast_binary(const std::vector<uint8_t>& data);
+            void send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data);
+            void send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data);
+            void run();
             void stop();
+            void set_port(uint16_t port);
 
         private:
             Server _server;
             MessageHandler _message_handler;
-            std::vector<ConnectionHandle> _connections;
+            std::map<std::string, ConnectionHandle> _connections;
             std::thread _thread;
+            uint16_t _port;
         };
     }
 }

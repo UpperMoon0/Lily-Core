@@ -26,42 +26,71 @@ namespace lily {
             std::cout << "WebSocketManager shutting down." << std::endl;
         }
 
-        void WebSocketManager::connect(const ConnectionHandle& conn) {
-            // For now, we just log the connection.
-            // In a real implementation, we would store the connection pointer.
+        void WebSocketManager::connect(const ConnectionHandle& /*conn*/) {
             std::cout << "Client connected." << std::endl;
-            _connections.push_back(conn);
+            // We don't know the user_id yet, so we can't add it to the map here.
+            // We'll handle it in the on_message function.
         }
 
         void WebSocketManager::disconnect(const ConnectionHandle& conn) {
-            // For now, we just log the disconnection.
-            // In a real implementation, we would find and remove the connection pointer.
             std::cout << "Client disconnected." << std::endl;
-            // The following line requires a proper comparison for weak_ptr, which is complex.
-            // For this placeholder, we'll just clear the list if it gets too large.
-            if (_connections.size() > 100) {
-                _connections.clear();
+            // Find and remove the connection from the map
+            for (auto it = _connections.begin(); it != _connections.end(); ++it) {
+                if (!it->second.owner_before(conn) && !conn.owner_before(it->second)) {
+                    _connections.erase(it);
+                    break;
+                }
             }
         }
 
         void WebSocketManager::broadcast(const std::string& message) {
-            std::cout << "Broadcasting message: " << message << std::endl;
-            // In a real implementation, we would iterate over _connections
-            // and send the message to each client.
+            for (const auto& pair : _connections) {
+                _server.send(pair.second, message, websocketpp::frame::opcode::text);
+            }
+        }
+
+        void WebSocketManager::broadcast_binary(const std::vector<uint8_t>& data) {
+            for (const auto& pair : _connections) {
+                _server.send(pair.second, data.data(), data.size(), websocketpp::frame::opcode::binary);
+            }
+        }
+
+        void WebSocketManager::send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data) {
+            _server.send(conn, data.data(), data.size(), websocketpp::frame::opcode::binary);
+        }
+
+        void WebSocketManager::send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data) {
+            auto it = _connections.find(client_id);
+            if (it != _connections.end()) {
+                send_binary_to_client(it->second, data);
+            } else {
+                std::cerr << "Client not found: " << client_id << std::endl;
+            }
         }
 
         void WebSocketManager::on_message(const ConnectionHandle& conn, const std::string& message) {
-            if (_message_handler) {
-                _message_handler(message);
+            // Check for a registration message
+            if (message.rfind("register:", 0) == 0) {
+                std::string user_id = message.substr(9);
+                _connections[user_id] = conn;
+                std::cout << "Registered client with user_id: " << user_id << std::endl;
+            } else {
+                if (_message_handler) {
+                    _message_handler(message);
+                }
             }
         }
         void WebSocketManager::set_message_handler(const MessageHandler& handler) {
             _message_handler = handler;
         }
 
-        void WebSocketManager::run(uint16_t port) {
+        void WebSocketManager::set_port(uint16_t port) {
+            _port = port;
+        }
+
+        void WebSocketManager::run() {
             try {
-                _server.listen(port);
+                _server.listen(_port);
                 _server.start_accept();
                 _thread = std::thread([this]() { _server.run(); });
             } catch (const std::exception& e) {
@@ -72,8 +101,8 @@ namespace lily {
         void WebSocketManager::stop() {
             if (_thread.joinable()) {
                 _server.stop_listening();
-                for (const auto& conn : _connections) {
-                    _server.close(conn, websocketpp::close::status::going_away, "Server shutting down");
+                for (const auto& pair : _connections) {
+                    _server.close(pair.second, websocketpp::close::status::going_away, "Server shutting down");
                 }
                 _server.stop();
                 _thread.join();

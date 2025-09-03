@@ -3,13 +3,15 @@
     {
       "id": "web-scout",
       "name": "Web Scout",
-      "url": "http://web-scout:8000",
+      "http_url": "http://web-scout:8000",
+      "websocket_url": "",
       "mcp": true
     },
     {
       "id": "tts-provider",
       "name": "TTS Provider",
-      "url": "http://tts-provider:9000",
+      "http_url": "http://tts-provider:8001",
+      "websocket_url": "ws://tts-provider:9000",
       "mcp": false
     }
   ]

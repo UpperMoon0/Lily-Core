@@ -10,14 +10,14 @@ namespace lily {
 namespace services {
     class MemoryService;
     class Service;  // Forward declaration
+    class ChatService;  // Forward declaration
+    class WebSocketManager; // Forward declaration
 }
 namespace services {
 
-class ChatService;
-
 class HTTPServer {
 public:
-    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service);
+    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager);
     ~HTTPServer();
 
     void start();
@@ -29,11 +29,13 @@ private:
     void handle_delete(web::http::http_request request);
     void handle_options(web::http::http_request request);
     void handle_monitoring(web::http::http_request request);
+    void handle_websocket(web::http::http_request request);
 
     web::http::experimental::listener::http_listener _listener;
     ChatService& _chat_service;
     MemoryService& _memory_service;
     Service& _tool_service;
+    WebSocketManager& _ws_manager;
 };
 
 } // namespace services

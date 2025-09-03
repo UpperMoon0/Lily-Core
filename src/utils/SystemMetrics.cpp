@@ -141,58 +141,30 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
         auto tools_per_server = tool_service->get_tools_per_server();
         size_t total_tools = tool_service->get_tool_count();
         
-        // Add each discovered service with its correct name
         for (const auto& service_info : service_infos) {
-            // Only add MCP services to the services list
+            ServiceStatus service_status;
+            service_status.name = service_info.name;
+            service_status.details["http_url"] = service_info.http_url;
+
             if (service_info.mcp) {
-                ServiceStatus service_status;
-                service_status.name = service_info.name;  // Use the correct name from services.json
-                service_status.status = "unknown";  // Default status
-                
-                // Check if this service is active (discovered)
-                bool is_active = false;
-                for (const auto& server_url : discovered_servers) {
-                    if (server_url == service_info.url) {
-                        is_active = true;
-                        break;
-                    }
-                }
-                
+                bool is_active = std::find(discovered_servers.begin(), discovered_servers.end(), service_info.http_url) != discovered_servers.end();
                 service_status.status = is_active ? "healthy" : "down";
-                service_status.details["description"] = "External MCP service";
-                service_status.details["url"] = service_info.url;
                 service_status.details["type"] = "MCP Server";
-                
-                // Add tool count for MCP servers
                 if (is_active) {
-                    auto it = tools_per_server.find(service_info.url);
+                    auto it = tools_per_server.find(service_info.http_url);
                     if (it != tools_per_server.end()) {
                         service_status.details["tool_count"] = std::to_string(it->second.size());
-                        
-                        // Add detailed tool information
-                        std::string tools_info = "";
-                        for (size_t i = 0; i < it->second.size(); ++i) {
-                            if (i > 0) tools_info += "|";
-                            const auto& tool = it->second[i];
-                            if (tool.contains("name")) {
-                                tools_info += tool["name"].get<std::string>();
-                            } else {
-                                tools_info += "unnamed_tool";
-                            }
-                            tools_info += ":";
-                            if (tool.contains("description")) {
-                                tools_info += tool["description"].get<std::string>();
-                            } else {
-                                tools_info += "No description";
-                            }
-                        }
-                        service_status.details["tools"] = tools_info;
                     }
                 }
-                
-                service_status.last_updated = core_service.last_updated;
-                services.push_back(service_status);
+            } else {
+                // For non-MCP services, we can add a simple health check if needed
+                // For now, we'll just mark them as "healthy" since they are registered
+                service_status.status = "healthy";
+                service_status.details["type"] = "Registered Service";
             }
+            
+            service_status.last_updated = core_service.last_updated;
+            services.push_back(service_status);
         }
         
         // Add summary information

@@ -28,6 +28,7 @@ set(SOURCES
     src/services/Service.cpp
     src/services/TTSService.cpp
     src/services/HTTPServer.cpp
+    src/services/WebSocketManager.cpp
     src/utils/SystemMetrics.cpp
 )
 

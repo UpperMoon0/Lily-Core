@@ -16,7 +16,8 @@ namespace lily {
         struct ServiceInfo {
             std::string id;
             std::string name;
-            std::string url;
+            std::string http_url;
+            std::string websocket_url;
             bool mcp;
         };
 
