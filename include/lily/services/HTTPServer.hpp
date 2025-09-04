@@ -12,12 +12,13 @@ namespace services {
     class Service;  // Forward declaration
     class ChatService;  // Forward declaration
     class WebSocketManager; // Forward declaration
+    class AgentLoopService; // Forward declaration
 }
 namespace services {
 
 class HTTPServer {
 public:
-    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager);
+    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service);
     ~HTTPServer();
 
     void start();
@@ -36,6 +37,7 @@ private:
     MemoryService& _memory_service;
     Service& _tool_service;
     WebSocketManager& _ws_manager;
+    AgentLoopService& _agent_loop_service;
 };
 
 } // namespace services

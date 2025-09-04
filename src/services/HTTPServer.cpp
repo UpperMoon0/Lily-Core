@@ -2,6 +2,7 @@
 #include "lily/services/ChatService.hpp"
 #include "lily/services/Service.hpp"
 #include "lily/services/WebSocketManager.hpp"
+#include "lily/services/AgentLoopService.hpp"
 #include "lily/utils/SystemMetrics.hpp"
 #include <cpprest/http_msg.h>
 #include <iostream>
@@ -19,23 +20,13 @@ using namespace web::http::experimental::listener;
 namespace lily {
 namespace services {
 
-// Helper function to read file content
-std::string read_file_content(const std::string& file_path) {
-    std::ifstream file(file_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + file_path);
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
-
-HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager)
+HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
       _chat_service(chat_service),
       _memory_service(memory_service),
       _tool_service(tool_service),
-      _ws_manager(ws_manager) {
+      _ws_manager(ws_manager),
+      _agent_loop_service(agent_loop_service) {
     _listener.support(methods::POST, std::bind(&HTTPServer::handle_post, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_get, this, std::placeholders::_1));
     _listener.support(methods::DEL, std::bind(&HTTPServer::handle_delete, this, std::placeholders::_1));
@@ -120,55 +111,7 @@ void HTTPServer::handle_get(http_request request) {
     response.headers().add("Access-Control-Allow-Headers", "Content-Type");
     
     auto path = request.relative_uri().path();
-    if (path == "/swagger.json") {
-        try {
-            // Read and serve the Swagger JSON file
-            std::string swagger_json = read_file_content("include/lily/api/swagger.json");
-            response.set_status_code(status_codes::OK);
-            response.set_body(swagger_json);
-            response.headers().set_content_type("application/json");
-            request.reply(response);
-            return;
-        } catch (const std::exception& e) {
-            response.set_status_code(status_codes::InternalError);
-            response.set_body("Error loading Swagger documentation: " + std::string(e.what()));
-            request.reply(response);
-            return;
-        }
-    } else if (path == "/swagger-ui") {
-        // Serve Swagger UI HTML page
-        std::string html_content = R"(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Lily Core API Documentation</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3.25.0/swagger-ui.css">
-</head>
-<body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@3.25.0/swagger-ui-bundle.js"></script>
-    <script>
-        window.onload = function() {
-            SwaggerUIBundle({
-                url: '/swagger.json',
-                dom_id: '#swagger-ui',
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIBundle.presets.standalone
-                ]
-            });
-        };
-    </script>
-</body>
-</html>
-)";
-        response.set_status_code(status_codes::OK);
-        response.set_body(html_content);
-        response.headers().set_content_type("text/html");
-        request.reply(response);
-        return;
-    } else if (path == "/monitoring") {
+    if (path == "/monitoring") {
         try {
             lily::utils::SystemMetricsCollector metrics_collector;
             auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0", &_tool_service);
@@ -265,6 +208,87 @@ void HTTPServer::handle_get(http_request request) {
         response_json["user_ids"] = user_ids_json;
         response_json["count"] = web::json::value::number(user_ids.size());
         response_json["timestamp"] = web::json::value::string(utility::datetime::utc_now().to_string());
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
+    } else if (path == "/agent-loops") {
+        // Get the last agent loop information
+        const auto& last_loop = _agent_loop_service.get_last_agent_loop();
+        
+        web::json::value response_json = web::json::value::object();
+        
+        if (last_loop.user_id.empty()) {
+            // No agent loops exist
+            response_json["exists"] = web::json::value::boolean(false);
+            response_json["message"] = web::json::value::string("No agent loops available");
+        } else {
+            response_json["exists"] = web::json::value::boolean(true);
+            response_json["user_id"] = web::json::value::string(last_loop.user_id);
+            response_json["user_message"] = web::json::value::string(last_loop.user_message);
+            response_json["final_response"] = web::json::value::string(last_loop.final_response);
+            response_json["completed"] = web::json::value::boolean(last_loop.completed);
+            
+            // Convert timestamps
+            auto start_time = std::chrono::system_clock::to_time_t(last_loop.start_time);
+            auto end_time = std::chrono::system_clock::to_time_t(last_loop.end_time);
+            char buf[100];
+            
+            if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&start_time))) {
+                response_json["start_time"] = web::json::value::string(std::string(buf));
+            }
+            
+            if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&end_time))) {
+                response_json["end_time"] = web::json::value::string(std::string(buf));
+            }
+            
+            // Add steps
+            web::json::value steps_json = web::json::value::array(last_loop.steps.size());
+            for (size_t i = 0; i < last_loop.steps.size(); ++i) {
+                const auto& step = last_loop.steps[i];
+                web::json::value step_json = web::json::value::object();
+                
+                step_json["step_number"] = web::json::value::number(step.step_number);
+                
+                // Convert step type to string
+                std::string step_type_str;
+                switch (step.type) {
+                    case lily::models::AgentStepType::THINKING:
+                        step_type_str = "thinking";
+                        break;
+                    case lily::models::AgentStepType::TOOL_CALL:
+                        step_type_str = "tool_call";
+                        break;
+                    case lily::models::AgentStepType::RESPONSE:
+                        step_type_str = "response";
+                        break;
+                    default:
+                        step_type_str = "unknown";
+                }
+                step_json["type"] = web::json::value::string(step_type_str);
+                
+                step_json["reasoning"] = web::json::value::string(step.reasoning);
+                step_json["tool_name"] = web::json::value::string(step.tool_name);
+                
+                // Convert tool parameters
+                std::string tool_params_str = step.tool_parameters.dump();
+                step_json["tool_parameters"] = web::json::value::parse(utility::conversions::to_string_t(tool_params_str));
+                
+                // Convert tool result
+                std::string tool_result_str = step.tool_result.dump();
+                step_json["tool_result"] = web::json::value::parse(utility::conversions::to_string_t(tool_result_str));
+                
+                // Convert timestamp
+                auto step_time = std::chrono::system_clock::to_time_t(step.timestamp);
+                if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&step_time))) {
+                    step_json["timestamp"] = web::json::value::string(std::string(buf));
+                }
+                
+                steps_json[i] = step_json;
+            }
+            response_json["steps"] = steps_json;
+        }
         
         http_response response(status_codes::OK);
         response.set_body(response_json);

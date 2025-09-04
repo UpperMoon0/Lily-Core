@@ -66,7 +66,7 @@ int main() {
         *websocket_manager
     );
 
-    http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager);
+    http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager, *agent_loop_service);
     http_server_ptr->start();
 
     websocket_manager->set_port(9002);
