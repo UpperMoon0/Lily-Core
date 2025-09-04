@@ -13,8 +13,6 @@ namespace lily {
             : _memoryService(memoryService), _toolService(toolService) {}
 
         std::string AgentLoopService::run_loop(const std::string& user_message, const std::string& user_id) {
-            std::cout << "Running agent loop for user: " << user_id << std::endl;
-
             const char* api_key = std::getenv("GEMINI_API_KEY");
             if (!api_key) {
                 std::cerr << "GEMINI_API_KEY not set" << std::endl;

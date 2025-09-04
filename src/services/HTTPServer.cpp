@@ -9,6 +9,8 @@
 #include <ctime>
 #include <vector>
 #include <cstdint>
+#include <fstream>
+#include <sstream>
 
 using namespace web;
 using namespace web::http;
@@ -16,6 +18,17 @@ using namespace web::http::experimental::listener;
 
 namespace lily {
 namespace services {
+
+// Helper function to read file content
+std::string read_file_content(const std::string& file_path) {
+    std::ifstream file(file_path);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + file_path);
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
 
 HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
@@ -25,6 +38,7 @@ HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& c
       _ws_manager(ws_manager) {
     _listener.support(methods::POST, std::bind(&HTTPServer::handle_post, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_get, this, std::placeholders::_1));
+    _listener.support(methods::DEL, std::bind(&HTTPServer::handle_delete, this, std::placeholders::_1));
     _listener.support(methods::OPTIONS, std::bind(&HTTPServer::handle_options, this, std::placeholders::_1));
 }
 
@@ -66,13 +80,8 @@ void HTTPServer::handle_post(http_request request) {
                         }
                     }
                     
-                    std::cout << "DEBUG: HTTPServer handling chat message for user_id: " << user_id << std::endl;
-                    std::cout << "DEBUG: HTTPServer TTS enabled: " << (chat_params.enable_tts ? "true" : "false") << std::endl;
                     if (chat_params.enable_tts) {
-                        std::cout << "DEBUG: HTTPServer TTS params - Speaker: " << chat_params.tts_params.speaker
-                                  << ", Sample rate: " << chat_params.tts_params.sample_rate
-                                  << ", Model: " << chat_params.tts_params.model
-                                  << ", Lang: " << chat_params.tts_params.lang << std::endl;
+                        std::cout << "TTS enabled for user_id: " << user_id << std::endl;
                     }
                     lily::services::ChatResponse chat_response = _chat_service.handle_chat_message_with_audio(message, user_id, chat_params);
 
@@ -111,7 +120,55 @@ void HTTPServer::handle_get(http_request request) {
     response.headers().add("Access-Control-Allow-Headers", "Content-Type");
     
     auto path = request.relative_uri().path();
-    if (path == "/monitoring") {
+    if (path == "/swagger.json") {
+        try {
+            // Read and serve the Swagger JSON file
+            std::string swagger_json = read_file_content("include/lily/api/swagger.json");
+            response.set_status_code(status_codes::OK);
+            response.set_body(swagger_json);
+            response.headers().set_content_type("application/json");
+            request.reply(response);
+            return;
+        } catch (const std::exception& e) {
+            response.set_status_code(status_codes::InternalError);
+            response.set_body("Error loading Swagger documentation: " + std::string(e.what()));
+            request.reply(response);
+            return;
+        }
+    } else if (path == "/swagger-ui") {
+        // Serve Swagger UI HTML page
+        std::string html_content = R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lily Core API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3.25.0/swagger-ui.css">
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@3.25.0/swagger-ui-bundle.js"></script>
+    <script>
+        window.onload = function() {
+            SwaggerUIBundle({
+                url: '/swagger.json',
+                dom_id: '#swagger-ui',
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIBundle.presets.standalone
+                ]
+            });
+        };
+    </script>
+</body>
+</html>
+)";
+        response.set_status_code(status_codes::OK);
+        response.set_body(html_content);
+        response.headers().set_content_type("text/html");
+        request.reply(response);
+        return;
+    } else if (path == "/monitoring") {
         try {
             lily::utils::SystemMetricsCollector metrics_collector;
             auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0", &_tool_service);
@@ -160,7 +217,7 @@ void HTTPServer::handle_get(http_request request) {
         } catch (const std::exception& e) {
             request.reply(status_codes::InternalError, e.what());
         }
-    } else if (path.compare(0, 12, "/conversation") == 0) {
+    } else if (path.compare(0, 13, "/conversation") == 0) {
         std::string path_str = path;
         size_t pos = path_str.find_last_of('/');
         if (pos != std::string::npos && pos < path_str.size() - 1) {
@@ -194,6 +251,25 @@ void HTTPServer::handle_get(http_request request) {
         } else {
             request.reply(status_codes::BadRequest, "Invalid conversation path");
         }
+    } else if (path == "/connected-users") {
+        // Get all connected user IDs from WebSocketManager
+        auto user_ids = _ws_manager.get_connected_user_ids();
+        
+        web::json::value response_json = web::json::value::object();
+        web::json::value user_ids_json = web::json::value::array(user_ids.size());
+        
+        for (size_t i = 0; i < user_ids.size(); ++i) {
+            user_ids_json[i] = web::json::value::string(user_ids[i]);
+        }
+        
+        response_json["user_ids"] = user_ids_json;
+        response_json["count"] = web::json::value::number(user_ids.size());
+        response_json["timestamp"] = web::json::value::string(utility::datetime::utc_now().to_string());
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
     } else {
         http_response response(status_codes::NotFound);
         response.headers().add("Access-Control-Allow-Origin", "*");
@@ -205,7 +281,7 @@ void HTTPServer::handle_get(http_request request) {
 
 void HTTPServer::handle_delete(http_request request) {
     auto path = request.relative_uri().path();
-    if (path.compare(0, 12, "/conversation") == 0) {
+    if (path.compare(0, 13, "/conversation") == 0) {
         std::string path_str = path;
         size_t pos = path_str.find_last_of('/');
         if (pos != std::string::npos && pos < path_str.size() - 1) {

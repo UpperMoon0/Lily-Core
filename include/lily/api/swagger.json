@@ -1,0 +1,369 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Lily Core API",
+    "description": "REST API for Lily Core conversational AI service",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/chat": {
+      "post": {
+        "summary": "Send a chat message",
+        "description": "Send a message to the AI and receive a response with optional TTS audio",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - missing required fields"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/monitoring": {
+      "get": {
+        "summary": "Get system monitoring data",
+        "description": "Retrieve system metrics and service status information",
+        "responses": {
+          "200": {
+            "description": "Monitoring data retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/conversation/{user_id}": {
+      "get": {
+        "summary": "Get conversation history",
+        "description": "Retrieve the conversation history for a specific user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier for the user"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid user ID format"
+          },
+          "404": {
+            "description": "User conversation not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete conversation history",
+        "description": "Delete the conversation history for a specific user",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier for the user"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation deleted successfully"
+          },
+          "400": {
+            "description": "Invalid user ID format"
+          },
+          "404": {
+            "description": "User conversation not found"
+          }
+        }
+      }
+    },
+    "/connected-users": {
+      "get": {
+        "summary": "Get connected user IDs",
+        "description": "Retrieve a list of all currently connected user IDs from WebSocket connections",
+        "responses": {
+          "200": {
+            "description": "List of connected user IDs retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedUsersResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatRequest": {
+        "type": "object",
+        "required": ["message", "user_id"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The message text to send to the AI"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Unique identifier for the user"
+          },
+          "tts": {
+            "$ref": "#/components/schemas/TTSConfig"
+          }
+        }
+      },
+      "TTSConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether TTS is enabled",
+            "default": false
+          },
+          "params": {
+            "$ref": "#/components/schemas/TTSParams"
+          }
+        }
+      },
+      "TTSParams": {
+        "type": "object",
+        "properties": {
+          "speaker": {
+            "type": "integer",
+            "description": "Speaker ID for TTS",
+            "default": 0
+          },
+          "sample_rate": {
+            "type": "integer",
+            "description": "Sample rate for audio",
+            "default": 24000
+          },
+          "model": {
+            "type": "string",
+            "description": "TTS model to use",
+            "default": "edge"
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language code for TTS",
+            "default": "en-US"
+          }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string",
+            "description": "The AI's response text"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the response"
+          }
+        }
+      },
+      "MonitoringResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Overall service status"
+          },
+          "service_name": {
+            "type": "string",
+            "description": "Name of the service"
+          },
+          "version": {
+            "type": "string",
+            "description": "Service version"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the monitoring data"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/SystemMetrics"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceStatus"
+            },
+            "description": "List of service statuses"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Additional monitoring details"
+          }
+        }
+      },
+      "SystemMetrics": {
+        "type": "object",
+        "properties": {
+          "cpu_usage": {
+            "type": "number",
+            "format": "float",
+            "description": "CPU usage percentage"
+          },
+          "memory_usage": {
+            "type": "number",
+            "format": "float",
+            "description": "Memory usage percentage"
+          },
+          "disk_usage": {
+            "type": "number",
+            "format": "float",
+            "description": "Disk usage percentage"
+          },
+          "uptime": {
+            "type": "string",
+            "description": "System uptime duration"
+          }
+        }
+      },
+      "ServiceStatus": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Service name"
+          },
+          "status": {
+            "type": "string",
+            "description": "Service status"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Service details"
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp"
+          }
+        }
+      },
+      "ConversationResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Unique identifier for the user"
+          },
+          "conversation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "description": "List of messages in the conversation"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role of the message sender (user/assistant)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Content of the message"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the message was sent"
+          }
+        }
+      },
+      "ConnectedUsersResponse": {
+        "type": "object",
+        "properties": {
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of connected user IDs"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of connected users"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the data was retrieved"
+          }
+        }
+      }
+    }
+  }
+}

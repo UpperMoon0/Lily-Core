@@ -55,6 +55,9 @@ COPY --from=builder /app/build/lily_core .
 # Copy the tool servers configuration
 COPY services.json .
 
+# Copy the include directory for Swagger JSON
+COPY --from=builder /app/include ./include
+
 # Expose the port the application runs on
 EXPOSE 8000
 EXPOSE 9002

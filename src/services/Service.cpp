@@ -140,9 +140,6 @@ namespace lily {
         }
 
         nlohmann::json Service::execute_tool(const std::string& tool_name, const nlohmann::json& parameters) {
-            std::cout << "Executing tool: " << tool_name << std::endl;
-            std::cout << "Parameters: " << parameters.dump(4) << std::endl;
-
             // Try to find the tool in our discovered tools
             for (const auto& server_url : _discovered_servers) {
                 try {

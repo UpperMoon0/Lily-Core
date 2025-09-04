@@ -25,18 +25,13 @@ namespace lily {
         }
 
         ChatResponse ChatService::handle_chat_message_with_audio(const std::string& message, const std::string& user_id, const ChatParameters& params) {
-            std::cout << "Handling chat message for user: " << user_id << std::endl;
-
             // 1. Save user message to memory
-            std::cout << "Saving user message to memory..." << std::endl;
             _memoryService.add_message(user_id, "user", message);
 
             // 2. Get response from agent loop
-            std::cout << "Invoking agent loop to get a response..." << std::endl;
             std::string agent_response = _agentLoopService.run_loop(message, user_id);
 
             // 3. Save agent response to memory
-            std::cout << "Saving agent response to memory..." << std::endl;
             _memoryService.add_message(user_id, "assistant", agent_response);
 
             // 4. Prepare response structure
@@ -45,25 +40,19 @@ namespace lily {
 
             // 5. Synthesize the response to audio if TTS is enabled
             if (params.enable_tts) {
-                std::cout << "Synthesizing agent response to audio..." << std::endl;
                 auto audio_data = _ttsService.synthesize_speech(agent_response, params.tts_params);
                 if (!audio_data.empty()) {
-                    std::cout << "DEBUG: Audio synthesis successful: " << audio_data.size() << " bytes" << std::endl;
-                    std::cout << "DEBUG: Attempting to send audio to user_id: " << user_id << std::endl;
                     // Wait for the connection to be registered before sending data
-                    // Increased timeout to 10 seconds to allow for UI registration
                     if (_webSocketManager.wait_for_connection_registration(user_id, 10)) {
-                        std::cout << "DEBUG: Connection for user_id " << user_id << " is registered, sending audio data." << std::endl;
                         _webSocketManager.send_binary_to_client_by_id(user_id, audio_data);
                     } else {
-                        std::cerr << "DEBUG: Connection for user_id " << user_id << " is not registered, unable to send audio data." << std::endl;
+                        std::cerr << "Connection for user_id " << user_id << " is not registered, unable to send audio data." << std::endl;
                     }
                 } else {
                     std::cerr << "Audio synthesis failed." << std::endl;
                 }
             }
 
-            std::cout << "Chat message processed." << std::endl;
             return response;
         }
     }

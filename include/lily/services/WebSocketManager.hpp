@@ -34,6 +34,7 @@ namespace lily {
             bool is_connection_registered(const std::string& client_id);
             bool wait_for_connection_registration(const std::string& client_id, int timeout_seconds = 5);
             bool is_connection_alive(const ConnectionHandle& conn);
+            std::vector<std::string> get_connected_user_ids();
             void run();
             void stop();
             void set_port(uint16_t port);
