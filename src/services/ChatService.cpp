@@ -48,8 +48,16 @@ namespace lily {
                 std::cout << "Synthesizing agent response to audio..." << std::endl;
                 auto audio_data = _ttsService.synthesize_speech(agent_response, params.tts_params);
                 if (!audio_data.empty()) {
-                    std::cout << "Audio synthesis successful: " << audio_data.size() << " bytes" << std::endl;
-                    _webSocketManager.send_binary_to_client_by_id(user_id, audio_data);
+                    std::cout << "DEBUG: Audio synthesis successful: " << audio_data.size() << " bytes" << std::endl;
+                    std::cout << "DEBUG: Attempting to send audio to user_id: " << user_id << std::endl;
+                    // Wait for the connection to be registered before sending data
+                    // Increased timeout to 10 seconds to allow for UI registration
+                    if (_webSocketManager.wait_for_connection_registration(user_id, 10)) {
+                        std::cout << "DEBUG: Connection for user_id " << user_id << " is registered, sending audio data." << std::endl;
+                        _webSocketManager.send_binary_to_client_by_id(user_id, audio_data);
+                    } else {
+                        std::cerr << "DEBUG: Connection for user_id " << user_id << " is not registered, unable to send audio data." << std::endl;
+                    }
                 } else {
                     std::cerr << "Audio synthesis failed." << std::endl;
                 }

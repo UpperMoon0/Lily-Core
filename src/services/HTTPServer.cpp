@@ -66,6 +66,14 @@ void HTTPServer::handle_post(http_request request) {
                         }
                     }
                     
+                    std::cout << "DEBUG: HTTPServer handling chat message for user_id: " << user_id << std::endl;
+                    std::cout << "DEBUG: HTTPServer TTS enabled: " << (chat_params.enable_tts ? "true" : "false") << std::endl;
+                    if (chat_params.enable_tts) {
+                        std::cout << "DEBUG: HTTPServer TTS params - Speaker: " << chat_params.tts_params.speaker
+                                  << ", Sample rate: " << chat_params.tts_params.sample_rate
+                                  << ", Model: " << chat_params.tts_params.model
+                                  << ", Lang: " << chat_params.tts_params.lang << std::endl;
+                    }
                     lily::services::ChatResponse chat_response = _chat_service.handle_chat_message_with_audio(message, user_id, chat_params);
 
                     json::value response_json;
@@ -87,11 +95,21 @@ void HTTPServer::handle_post(http_request request) {
     } else if (path.compare(0, 12, "/conversation") == 0) {
         request.reply(status_codes::MethodNotAllowed);
     } else {
-        request.reply(status_codes::NotFound);
+        http_response response(status_codes::NotFound);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        response.headers().add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        response.headers().add("Access-Control-Allow-Headers", "Content-Type");
+        request.reply(response);
     }
 }
 
 void HTTPServer::handle_get(http_request request) {
+    // Add CORS headers to all responses
+    http_response response;
+    response.headers().add("Access-Control-Allow-Origin", "*");
+    response.headers().add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    response.headers().add("Access-Control-Allow-Headers", "Content-Type");
+    
     auto path = request.relative_uri().path();
     if (path == "/monitoring") {
         try {
@@ -177,7 +195,11 @@ void HTTPServer::handle_get(http_request request) {
             request.reply(status_codes::BadRequest, "Invalid conversation path");
         }
     } else {
-        request.reply(status_codes::NotFound);
+        http_response response(status_codes::NotFound);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        response.headers().add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        response.headers().add("Access-Control-Allow-Headers", "Content-Type");
+        request.reply(response);
     }
 }
 
@@ -198,7 +220,11 @@ void HTTPServer::handle_delete(http_request request) {
             request.reply(status_codes::BadRequest, "Invalid conversation path");
         }
     } else {
-        request.reply(status_codes::NotFound);
+        http_response response(status_codes::NotFound);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        response.headers().add("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+        response.headers().add("Access-Control-Allow-Headers", "Content-Type");
+        request.reply(response);
     }
 }
 
@@ -211,4 +237,4 @@ void HTTPServer::handle_options(http_request request) {
 }
 
 } 
-} 
+}

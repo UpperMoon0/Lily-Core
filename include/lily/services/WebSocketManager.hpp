@@ -31,6 +31,9 @@ namespace lily {
             void broadcast_binary(const std::vector<uint8_t>& data);
             void send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data);
             void send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data);
+            bool is_connection_registered(const std::string& client_id);
+            bool wait_for_connection_registration(const std::string& client_id, int timeout_seconds = 5);
+            bool is_connection_alive(const ConnectionHandle& conn);
             void run();
             void stop();
             void set_port(uint16_t port);
@@ -39,6 +42,7 @@ namespace lily {
             Server _server;
             MessageHandler _message_handler;
             std::map<std::string, ConnectionHandle> _connections;
+            std::map<ConnectionHandle, std::string, std::owner_less<ConnectionHandle>> _connection_to_user;
             std::thread _thread;
             uint16_t _port;
         };
