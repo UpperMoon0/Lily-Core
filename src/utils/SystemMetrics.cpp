@@ -154,6 +154,22 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
                     auto it = tools_per_server.find(service_info.http_url);
                     if (it != tools_per_server.end()) {
                         service_status.details["tool_count"] = std::to_string(it->second.size());
+                        
+                        // Add tool names and descriptions
+                        std::string tools_str;
+                        for (const auto& tool : it->second) {
+                            if (tool.contains("name")) {
+                                std::string name = tool["name"].get<std::string>();
+                                std::string description = tool.value("description", "");
+                                if (!tools_str.empty()) {
+                                    tools_str += "|";
+                                }
+                                tools_str += name + ":" + description;
+                            }
+                        }
+                        if (!tools_str.empty()) {
+                            service_status.details["tools"] = tools_str;
+                        }
                     }
                 }
             } else {
