@@ -33,6 +33,7 @@ namespace lily {
             std::chrono::system_clock::time_point start_time;
             std::chrono::system_clock::time_point end_time;
             bool completed;
+            double duration_seconds;
         };
 
     }

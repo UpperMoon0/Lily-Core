@@ -39,9 +39,16 @@ namespace lily {
             current_loop.end_time = std::chrono::system_clock::now();
             current_loop.final_response = response;
             current_loop.completed = true;
+            
+            // Calculate duration in seconds
+            auto duration = std::chrono::duration_cast<std::chrono::duration<double>>(
+                current_loop.end_time - current_loop.start_time
+            );
+            current_loop.duration_seconds = duration.count();
 
             std::cout << "[AGENT LOOP] Completed agent loop with final response: " << response << std::endl;
             std::cout << "[AGENT LOOP] Total steps executed: " << current_loop.steps.size() << std::endl;
+            std::cout << "[AGENT LOOP] Total time taken: " << current_loop.duration_seconds << " seconds" << std::endl;
 
             // Store the agent loop
             {

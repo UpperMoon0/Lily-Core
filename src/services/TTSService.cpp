@@ -210,7 +210,16 @@ namespace lily {
                                                 }
                                             }
                                         } catch (const std::exception& e) {
-                                            std::cerr << "Error receiving audio data: " << e.what() << std::endl;
+                                            std::string error_msg = e.what();
+                                            // If we have received audio data and the error is about the connection closing, then it's expected.
+                                            if (audio_chunk_count > 0 && (error_msg.find("closed") != std::string::npos || error_msg.find("close") != std::string::npos)) {
+                                                // This is expected: the server closes the connection after sending audio.
+                                                receiving_audio = false;
+                                                break;
+                                            } else {
+                                                std::cerr << "Error receiving audio data: " << error_msg << std::endl;
+                                            }
+
                                             if (attempt < max_retries - 1) {
                                                 std::this_thread::sleep_for(std::chrono::seconds(1));
                                                 continue; // Retry the entire process

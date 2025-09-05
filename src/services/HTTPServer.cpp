@@ -243,6 +243,9 @@ void HTTPServer::handle_get(http_request request) {
                 response_json["end_time"] = web::json::value::string(std::string(buf));
             }
             
+            // Add duration
+            response_json["duration_seconds"] = web::json::value::number(last_loop.duration_seconds);
+            
             // Add steps
             web::json::value steps_json = web::json::value::array(last_loop.steps.size());
             for (size_t i = 0; i < last_loop.steps.size(); ++i) {
