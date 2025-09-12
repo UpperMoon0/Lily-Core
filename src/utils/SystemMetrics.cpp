@@ -5,6 +5,7 @@
 #include <thread>
 #include <iomanip>
 #include <sstream>
+#include <cpprest/http_client.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -173,10 +174,13 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
                     }
                 }
             } else {
-                // For non-MCP services, we can add a simple health check if needed
-                // For now, we'll just mark them as "healthy" since they are registered
-                service_status.status = "healthy";
+                // For non-MCP services, perform an actual health check
+                bool is_healthy = check_service_health(service_info.http_url);
+                service_status.status = is_healthy ? "healthy" : "down";
                 service_status.details["type"] = "Registered Service";
+                if (!is_healthy) {
+                    service_status.details["error"] = "Service is not responding";
+                }
             }
             
             service_status.last_updated = core_service.last_updated;
@@ -221,6 +225,27 @@ MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& se
     data.details["environment"] = "development";
     
     return data;
+}
+
+bool SystemMetricsCollector::check_service_health(const std::string& service_url) {
+    try {
+        // Create HTTP client
+        web::uri service_uri(utility::conversions::to_string_t(service_url));
+        web::uri_builder builder(service_uri);
+        builder.append_path(U("/health"));
+        
+        web::http::client::http_client client(builder.to_uri());
+        
+        // Send a GET request to the /health endpoint
+        web::http::http_request request(web::http::methods::GET);
+        auto response = client.request(request).get();
+        
+        // If we get a 200 OK response, the service is considered healthy
+        return response.status_code() == web::http::status_codes::OK;
+    } catch (const std::exception& e) {
+        // If there's any exception (connection refused, timeout, etc.), the service is down
+        return false;
+    }
 }
 
 } // namespace utils
