@@ -23,7 +23,7 @@ namespace lily {
             });
 
             _server.set_message_handler([this](ConnectionHandle conn, Server::message_ptr msg) {
-                this->on_message(conn, msg->get_payload());
+                this->on_message(conn, msg);
             });
             
             _server.set_pong_handler([this](ConnectionHandle conn, std::string payload) {
@@ -148,37 +148,55 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
             return user_ids;
         }
 
-        void WebSocketManager::on_message(const ConnectionHandle& conn, const std::string& message) {
-            // Handle ping messages
-            if (message == "ping") {
-                try {
-                    _server.send(conn, "pong", websocketpp::frame::opcode::text);
-                } catch (const std::exception& e) {
-                    std::cerr << "Error sending pong response: " << e.what() << std::endl;
-                }
-                return;
-            }
-            
-            // Check for a registration message
-            if (message.rfind("register:", 0) == 0) {
-                std::string user_id = message.substr(9);
-                _connections[user_id] = conn;
-                _connection_to_user[conn] = user_id;
+        void WebSocketManager::on_message(const ConnectionHandle& conn, Server::message_ptr msg) {
+            // Handle text messages
+            if (msg->get_opcode() == websocketpp::frame::opcode::text) {
+                std::string message = msg->get_payload();
                 
-                // Send registration confirmation back to the client
-                try {
-                    _server.send(conn, "registered", websocketpp::frame::opcode::text);
-                } catch (const std::exception& e) {
-                    std::cerr << "Error sending registration confirmation: " << e.what() << std::endl;
+                // Handle ping messages
+                if (message == "ping") {
+                    try {
+                        _server.send(conn, "pong", websocketpp::frame::opcode::text);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error sending pong response: " << e.what() << std::endl;
+                    }
+                    return;
                 }
-            } else {
-                if (_message_handler) {
-                    _message_handler(message);
+                
+                // Check for a registration message
+                if (message.rfind("register:", 0) == 0) {
+                    std::string user_id = message.substr(9);
+                    _connections[user_id] = conn;
+                    _connection_to_user[conn] = user_id;
+                    
+                    // Send registration confirmation back to the client
+                    try {
+                        _server.send(conn, "registered", websocketpp::frame::opcode::text);
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error sending registration confirmation: " << e.what() << std::endl;
+                    }
+                } else {
+                    if (_message_handler) {
+                        _message_handler(message);
+                    }
+                }
+            }
+            // Handle binary messages (audio data)
+            else if (msg->get_opcode() == websocketpp::frame::opcode::binary) {
+                const auto& payload = msg->get_payload();
+                std::vector<uint8_t> binary_data(payload.begin(), payload.end());
+                
+                if (_binary_message_handler) {
+                    _binary_message_handler(binary_data);
                 }
             }
         }
         void WebSocketManager::set_message_handler(const MessageHandler& handler) {
             _message_handler = handler;
+        }
+
+        void WebSocketManager::set_binary_message_handler(const BinaryMessageHandler& handler) {
+            _binary_message_handler = handler;
         }
 
         void WebSocketManager::set_port(uint16_t port) {

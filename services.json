@@ -13,6 +13,13 @@
       "http_url": "http://tts-provider:8001",
       "websocket_url": "ws://tts-provider:9000",
       "mcp": false
+    },
+    {
+      "id": "echo",
+      "name": "Echo Speech-to-Text Service",
+      "http_url": "http://echo:8003",
+      "websocket_url": "",
+      "mcp": false
     }
   ]
 }

@@ -17,16 +17,18 @@ namespace lily {
         using Server = websocketpp::server<websocketpp::config::asio>;
         using ConnectionHandle = websocketpp::connection_hdl;
         using MessageHandler = std::function<void(const std::string&)>;
+        using BinaryMessageHandler = std::function<void(const std::vector<uint8_t>&)>;
 
         class WebSocketManager {
         public:
             WebSocketManager();
             ~WebSocketManager();
-            void on_message(const ConnectionHandle& conn, const std::string& message);
+            void on_message(const ConnectionHandle& conn, Server::message_ptr msg);
 
             void connect(const ConnectionHandle& conn);
             void disconnect(const ConnectionHandle& conn);
             void set_message_handler(const MessageHandler& handler);
+            void set_binary_message_handler(const BinaryMessageHandler& handler);
             void broadcast(const std::string& message);
             void broadcast_binary(const std::vector<uint8_t>& data);
             void send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data);
@@ -42,6 +44,7 @@ namespace lily {
         private:
             Server _server;
             MessageHandler _message_handler;
+            BinaryMessageHandler _binary_message_handler;
             std::map<std::string, ConnectionHandle> _connections;
             std::map<ConnectionHandle, std::string, std::owner_less<ConnectionHandle>> _connection_to_user;
             std::thread _thread;

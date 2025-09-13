@@ -147,11 +147,14 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
             service_status.name = service_info.name;
             service_status.details["http_url"] = service_info.http_url;
 
+            // For all services (both MCP and non-MCP), perform a standardized health check
+            bool is_healthy = check_service_health(service_info.http_url);
+            service_status.status = is_healthy ? "healthy" : "down";
+            
             if (service_info.mcp) {
-                bool is_active = std::find(discovered_servers.begin(), discovered_servers.end(), service_info.http_url) != discovered_servers.end();
-                service_status.status = is_active ? "healthy" : "down";
                 service_status.details["type"] = "MCP Server";
-                if (is_active) {
+                // For MCP services, also include tool discovery information if healthy
+                if (is_healthy) {
                     auto it = tools_per_server.find(service_info.http_url);
                     if (it != tools_per_server.end()) {
                         service_status.details["tool_count"] = std::to_string(it->second.size());
@@ -174,9 +177,6 @@ std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::se
                     }
                 }
             } else {
-                // For non-MCP services, perform an actual health check
-                bool is_healthy = check_service_health(service_info.http_url);
-                service_status.status = is_healthy ? "healthy" : "down";
                 service_status.details["type"] = "Registered Service";
                 if (!is_healthy) {
                     service_status.details["error"] = "Service is not responding";
