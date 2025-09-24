@@ -5,7 +5,7 @@
 namespace lily {
     namespace services {
 
-        WebSocketManager::WebSocketManager() {
+        WebSocketManager::WebSocketManager() : _running(false), _ping_interval_seconds(30), _pong_timeout_seconds(60) {
             _server.init_asio();
             
             // Configure logging to suppress verbose frame header messages
@@ -33,13 +33,18 @@ namespace lily {
             });
             
             _server.set_pong_handler([this](ConnectionHandle conn, std::string payload) {
-                // Pong received, no need for debug log
+                // Pong received, update last pong time
+                _last_pong_time[conn] = std::chrono::steady_clock::now();
             });
             
             _server.set_pong_timeout_handler([this](ConnectionHandle conn, std::string payload) {
-                // Don't close the connection immediately on pong timeout
-                // Let the client handle reconnection if needed
-                // Just log the timeout for debugging purposes
+                // Close the connection on pong timeout
+                std::cerr << "Pong timeout for connection, closing connection" << std::endl;
+                try {
+                    _server.close(conn, websocketpp::close::status::policy_violation, "Pong timeout");
+                } catch (const std::exception& e) {
+                    std::cerr << "Error closing connection on pong timeout: " << e.what() << std::endl;
+                }
             });
         }
 
@@ -58,6 +63,9 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         _connections.erase(user_id);
         _connection_to_user.erase(it);
     }
+    
+    // Remove pong time tracking for this connection
+    _last_pong_time.erase(conn);
         }
 
         void WebSocketManager::broadcast(const std::string& message) {
@@ -208,11 +216,74 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         void WebSocketManager::set_port(uint16_t port) {
             _port = port;
         }
+        
+        void WebSocketManager::set_ping_interval(int seconds) {
+            _ping_interval_seconds = seconds;
+        }
+        
+        void WebSocketManager::set_pong_timeout(int seconds) {
+            _pong_timeout_seconds = seconds;
+        }
+        
+        void WebSocketManager::ping_clients() {
+            while (_running) {
+                // Sleep for the ping interval
+                std::this_thread::sleep_for(std::chrono::seconds(_ping_interval_seconds));
+                
+                if (!_running) {
+                    break;
+                }
+                
+                // Send ping to all connected clients
+                auto now = std::chrono::steady_clock::now();
+                auto timeout_duration = std::chrono::seconds(_pong_timeout_seconds);
+                
+                for (const auto& pair : _connections) {
+                    const auto& conn = pair.second;
+                    
+                    // Check if we've received a pong recently
+                    auto last_pong_it = _last_pong_time.find(conn);
+                    if (last_pong_it != _last_pong_time.end()) {
+                        auto time_since_last_pong = now - last_pong_it->second;
+                        if (time_since_last_pong > timeout_duration) {
+                            // Client hasn't responded to ping, close connection
+                            std::cerr << "Client hasn't responded to ping, closing connection" << std::endl;
+                            try {
+                                _server.close(conn, websocketpp::close::status::policy_violation, "No pong response");
+                            } catch (const std::exception& e) {
+                                std::cerr << "Error closing connection: " << e.what() << std::endl;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    // Send ping message
+                    try {
+                        _server.ping(conn, "keepalive");
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error sending ping to client: " << e.what() << std::endl;
+                    }
+                }
+            }
+        }
 
         void WebSocketManager::run() {
             try {
                 _server.listen(_port);
                 _server.start_accept();
+                
+                // Start the ping thread
+                _running = true;
+                _ping_thread = std::thread([this]() {
+                    try {
+                        this->ping_clients();
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error in ping thread: " << e.what() << std::endl;
+                    } catch (...) {
+                        std::cerr << "Unknown error in ping thread" << std::endl;
+                    }
+                });
+                
                 _thread = std::thread([this]() {
                     try {
                         _server.run();
@@ -229,6 +300,12 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
 
         void WebSocketManager::stop() {
             try {
+                _running = false;
+                
+                if (_ping_thread.joinable()) {
+                    _ping_thread.join();
+                }
+                
                 if (_thread.joinable()) {
                     _server.stop_listening();
                     // Close all connections
@@ -242,6 +319,7 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                     // Clear connection maps
                     _connections.clear();
                     _connection_to_user.clear();
+                    _last_pong_time.clear();
                     _server.stop();
                     _thread.join();
                 }

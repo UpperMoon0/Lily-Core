@@ -9,6 +9,8 @@
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <functional>
 #include <thread>
+#include <chrono>
+#include <atomic>
 
 namespace lily {
         
@@ -40,6 +42,8 @@ namespace lily {
             void run();
             void stop();
             void set_port(uint16_t port);
+            void set_ping_interval(int seconds);
+            void set_pong_timeout(int seconds);
 
         private:
             Server _server;
@@ -47,8 +51,14 @@ namespace lily {
             BinaryMessageHandler _binary_message_handler;
             std::map<std::string, ConnectionHandle> _connections;
             std::map<ConnectionHandle, std::string, std::owner_less<ConnectionHandle>> _connection_to_user;
+            std::map<ConnectionHandle, std::chrono::steady_clock::time_point, std::owner_less<ConnectionHandle>> _last_pong_time;
             std::thread _thread;
+            std::thread _ping_thread;
+            std::atomic<bool> _running;
             uint16_t _port;
+            int _ping_interval_seconds;
+            int _pong_timeout_seconds;
+            void ping_clients();
         };
     }
 }

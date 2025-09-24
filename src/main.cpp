@@ -75,6 +75,8 @@ int main() {
     http_server_ptr->start();
 
     websocket_manager->set_port(9002);
+    websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
+    websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
     
     // Set binary message handler for audio data
     websocket_manager->set_binary_message_handler([&chat_service, tool_service](const std::vector<uint8_t>& audio_data) {
