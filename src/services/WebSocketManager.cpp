@@ -11,8 +11,14 @@ namespace lily {
             // Configure logging to suppress verbose frame header messages
             _server.set_error_channels(websocketpp::log::elevel::all);
             _server.set_access_channels(websocketpp::log::alevel::connect |
-                                      websocketpp::log::alevel::disconnect |
-                                      websocketpp::log::alevel::app);
+                                  websocketpp::log::alevel::disconnect |
+                                  websocketpp::log::alevel::app);
+            
+            // Suppress frame header and payload logging
+            _server.clear_access_channels(websocketpp::log::alevel::frame_header);
+            _server.clear_access_channels(websocketpp::log::alevel::frame_payload);
+            _server.clear_access_channels(websocketpp::log::alevel::debug_handshake);
+            _server.clear_access_channels(websocketpp::log::alevel::debug_close);
             
             _server.set_open_handler([this](ConnectionHandle conn) {
                 this->connect(conn);

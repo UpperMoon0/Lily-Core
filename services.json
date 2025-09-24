@@ -16,7 +16,7 @@
     },
     {
       "id": "echo",
-      "name": "Echo Speech-to-Text Service",
+      "name": "Echo",
       "http_url": "http://echo:8003",
       "websocket_url": "",
       "mcp": false
