@@ -79,60 +79,75 @@ int main() {
     websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
     
     // Set binary message handler for audio data
-    websocket_manager->set_binary_message_handler([&chat_service, tool_service](const std::vector<uint8_t>& audio_data) {
-        // Here we'll handle the audio data: send to Echo service for transcription
+    websocket_manager->set_binary_message_handler([&chat_service, &websocket_manager, tool_service](const std::vector<uint8_t>& audio_data) {
+        // Send audio data to Echo service via WebSocket for streaming transcription
         std::cout << "Received binary audio data of size: " << audio_data.size() << " bytes" << std::endl;
-        
-        // Find Echo service from discovered services
-        std::string echo_service_url;
-        for (const auto& service : tool_service->get_services_info()) {
-            if (service.id == "echo") {
-                echo_service_url = service.http_url;
-                std::cout << "Found Echo service at " << echo_service_url << std::endl;
-                break;
-            }
-        }
-        
-        if (echo_service_url.empty()) {
-            std::cerr << "Echo service not found. Cannot transcribe audio." << std::endl;
-            return;
-        }
-        
-        // Send audio data to Echo service for transcription
+
+        // Send audio data to Echo service
+        websocket_manager->send_audio_to_echo(audio_data);
+    });
+
+    // Set Echo message handler to process transcription results
+    websocket_manager->set_echo_message_handler([&chat_service, &websocket_manager](const nlohmann::json& message) {
         try {
-            // Create HTTP client
-            web::http::client::http_client client(echo_service_url);
-            
-            // Prepare request
-            web::http::http_request request(web::http::methods::POST);
-            request.set_request_uri("/transcribe");
-            
-            // Set audio data as binary body
-            request.set_body(audio_data);
-            request.headers().set_content_type("application/octet-stream");
-            
-            // Send request and get response
-            auto response = client.request(request).get();
-            
-            if (response.status_code() == web::http::status_codes::OK) {
-                auto response_json = response.extract_json().get();
-                // Convert cpprest json to string and parse with nlohmann for consistency
-                std::string response_str = utility::conversions::to_utf8string(response_json.serialize());
-                auto nlohmann_json = nlohmann::json::parse(response_str);
-                std::string transcribed_text = nlohmann_json["text"].get<std::string>();
-                std::cout << "Transcribed text: " << transcribed_text << std::endl;
-                
-                // Pass transcribed text to chat service
-                chat_service->handle_chat_message(transcribed_text, "default_user");
-            } else {
-                std::cerr << "Echo service returned error: " << response.status_code() << std::endl;
-                auto error_body = response.extract_string().get();
-                std::cerr << "Error body: " << error_body << std::endl;
+            std::string message_type = message["type"];
+            std::string text = message["text"];
+
+            if (message_type == "interim") {
+                std::cout << "Interim transcription: " << text << std::endl;
+                // Forward interim transcription to UI for live display
+                nlohmann::json ui_message = {
+                    {"type", "interim"},
+                    {"text", text}
+                };
+                std::string ui_message_str = ui_message.dump();
+                websocket_manager->broadcast("transcription:" + ui_message_str);
+            } else if (message_type == "final") {
+                std::cout << "Final transcription: " << text << std::endl;
+                // Forward final transcription to UI
+                nlohmann::json ui_message = {
+                    {"type", "final"},
+                    {"text", text}
+                };
+                std::string ui_message_str = ui_message.dump();
+                websocket_manager->broadcast("transcription:" + ui_message_str);
+
+                // Send final transcription to chat service (triggers agent loop)
+                chat_service->handle_chat_message(text, "default_user");
             }
         } catch (const std::exception& e) {
-            std::cerr << "Error calling Echo service: " << e.what() << std::endl;
+            std::cerr << "Error processing Echo message: " << e.what() << std::endl;
         }
     });
+
+    // Connect to Echo service
+    std::string echo_websocket_url;
+    for (const auto& service : tool_service->get_services_info()) {
+        if (service.id == "echo") {
+            // Use WebSocket URL if available, otherwise construct from HTTP URL
+            if (!service.websocket_url.empty()) {
+                echo_websocket_url = service.websocket_url + "/ws/transcribe";
+            } else {
+                // Convert HTTP URL to WebSocket URL
+                std::string http_url = service.http_url;
+                if (http_url.find("http://") == 0) {
+                    echo_websocket_url = "ws://" + http_url.substr(7) + "/ws/transcribe";
+                } else if (http_url.find("https://") == 0) {
+                    echo_websocket_url = "wss://" + http_url.substr(8) + "/ws/transcribe";
+                }
+            }
+            std::cout << "Found Echo WebSocket endpoint at " << echo_websocket_url << std::endl;
+            break;
+        }
+    }
+
+    if (!echo_websocket_url.empty()) {
+        if (!websocket_manager->connect_to_echo(echo_websocket_url)) {
+            std::cerr << "Failed to connect to Echo service" << std::endl;
+        }
+    } else {
+        std::cerr << "Echo service not found. Audio transcription will not work." << std::endl;
+    }
     
     websocket_manager->run();
 

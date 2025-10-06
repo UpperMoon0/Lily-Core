@@ -16,6 +16,7 @@ endif()
 include_directories(
     include
     third_party/json/include
+    third_party/websocketpp
     /usr/include/cpprest
 )
 
@@ -36,4 +37,4 @@ set(SOURCES
 add_executable(lily_core ${SOURCES})
 
 # Link libraries
-target_link_libraries(lily_core PRIVATE pthread cpprest crypto ssl)
+target_link_libraries(lily_core PRIVATE pthread cpprest crypto ssl boost_system boost_thread)

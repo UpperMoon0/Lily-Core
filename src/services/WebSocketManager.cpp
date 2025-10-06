@@ -5,8 +5,23 @@
 namespace lily {
     namespace services {
 
-        WebSocketManager::WebSocketManager() : _running(false), _ping_interval_seconds(30), _pong_timeout_seconds(60) {
+        WebSocketManager::WebSocketManager() : _running(false), _ping_interval_seconds(30), _pong_timeout_seconds(60), _echo_connected(false) {
             _server.init_asio();
+
+            // Initialize Echo client
+            _echo_client.init_asio();
+            _echo_client.set_open_handler([this](EchoConnectionHandle conn) {
+                this->on_echo_open(conn);
+            });
+            _echo_client.set_close_handler([this](EchoConnectionHandle conn) {
+                this->on_echo_close(conn);
+            });
+            _echo_client.set_message_handler([this](EchoConnectionHandle conn, EchoClient::message_ptr msg) {
+                this->on_echo_message(conn, msg);
+            });
+            _echo_client.set_fail_handler([this](EchoConnectionHandle conn) {
+                this->on_echo_fail(conn);
+            });
             
             // Configure logging to suppress verbose frame header messages
             _server.set_error_channels(websocketpp::log::elevel::all);
@@ -50,6 +65,7 @@ namespace lily {
 
         WebSocketManager::~WebSocketManager() {
             stop();
+            disconnect_from_echo();
         }
 
         void WebSocketManager::connect(const ConnectionHandle& conn) {
@@ -301,11 +317,11 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         void WebSocketManager::stop() {
             try {
                 _running = false;
-                
+
                 if (_ping_thread.joinable()) {
                     _ping_thread.join();
                 }
-                
+
                 if (_thread.joinable()) {
                     _server.stop_listening();
                     // Close all connections
@@ -326,6 +342,96 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
             } catch (const std::exception& e) {
                 std::cerr << "Error in WebSocketManager::stop(): " << e.what() << std::endl;
             }
+        }
+
+        // Echo client methods
+        bool WebSocketManager::connect_to_echo(const std::string& echo_ws_url) {
+            try {
+                websocketpp::lib::error_code ec;
+                EchoClient::connection_ptr con = _echo_client.get_connection(echo_ws_url, ec);
+                if (ec) {
+                    std::cerr << "Error creating Echo connection: " << ec.message() << std::endl;
+                    return false;
+                }
+
+                _echo_connection = con->get_handle();
+                _echo_client.connect(con);
+
+                // Start Echo client thread
+                _echo_thread = std::thread([this]() {
+                    try {
+                        _echo_client.run();
+                    } catch (const std::exception& e) {
+                        std::cerr << "Error in Echo client thread: " << e.what() << std::endl;
+                    }
+                });
+
+                std::cout << "Connecting to Echo service at: " << echo_ws_url << std::endl;
+                return true;
+            } catch (const std::exception& e) {
+                std::cerr << "Error connecting to Echo service: " << e.what() << std::endl;
+                return false;
+            }
+        }
+
+        void WebSocketManager::disconnect_from_echo() {
+            try {
+                if (_echo_connected) {
+                    _echo_client.close(_echo_connection, websocketpp::close::status::normal, "Client disconnecting");
+                    _echo_connected = false;
+                }
+                if (_echo_thread.joinable()) {
+                    _echo_thread.join();
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error disconnecting from Echo service: " << e.what() << std::endl;
+            }
+        }
+
+        void WebSocketManager::send_audio_to_echo(const std::vector<uint8_t>& audio_data) {
+            if (!_echo_connected) {
+                std::cerr << "Not connected to Echo service" << std::endl;
+                return;
+            }
+
+            try {
+                _echo_client.send(_echo_connection, audio_data.data(), audio_data.size(), websocketpp::frame::opcode::binary);
+            } catch (const std::exception& e) {
+                std::cerr << "Error sending audio to Echo service: " << e.what() << std::endl;
+            }
+        }
+
+        void WebSocketManager::set_echo_message_handler(const EchoMessageHandler& handler) {
+            _echo_message_handler = handler;
+        }
+
+        void WebSocketManager::on_echo_open(EchoConnectionHandle conn) {
+            std::cout << "Connected to Echo service" << std::endl;
+            _echo_connected = true;
+        }
+
+        void WebSocketManager::on_echo_close(EchoConnectionHandle conn) {
+            std::cout << "Disconnected from Echo service" << std::endl;
+            _echo_connected = false;
+        }
+
+        void WebSocketManager::on_echo_message(EchoConnectionHandle conn, EchoClient::message_ptr msg) {
+            if (msg->get_opcode() == websocketpp::frame::opcode::text) {
+                std::string payload = msg->get_payload();
+                try {
+                    nlohmann::json message = nlohmann::json::parse(payload);
+                    if (_echo_message_handler) {
+                        _echo_message_handler(message);
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Error parsing Echo message: " << e.what() << std::endl;
+                }
+            }
+        }
+
+        void WebSocketManager::on_echo_fail(EchoConnectionHandle conn) {
+            std::cerr << "Echo connection failed" << std::endl;
+            _echo_connected = false;
         }
     }
 }
