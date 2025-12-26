@@ -420,11 +420,22 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 std::string payload = msg->get_payload();
                 try {
                     nlohmann::json message = nlohmann::json::parse(payload);
+                    
+                    // Check if there's a client_id to forward the message to
+                    if (message.contains("client_id")) {
+                        std::string client_id = message["client_id"];
+                        auto it = _connections.find(client_id);
+                        if (it != _connections.end()) {
+                            // Forward the original payload to the client
+                            _server.send(it->second, payload, websocketpp::frame::opcode::text);
+                        }
+                    }
+                    
                     if (_echo_message_handler) {
                         _echo_message_handler(message);
                     }
                 } catch (const std::exception& e) {
-                    std::cerr << "Error parsing Echo message: " << e.what() << std::endl;
+                    std::cerr << "Error processing Echo message: " << e.what() << std::endl;
                 }
             }
         }
