@@ -17,9 +17,6 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory
 WORKDIR /app
 
-# Copy the source code
-COPY . .
-
 # Create a directory for third-party libraries
 RUN mkdir -p third_party
 
@@ -27,6 +24,9 @@ RUN mkdir -p third_party
 RUN git clone https://github.com/nlohmann/json.git third_party/json && \
     git clone https://github.com/zaphoyd/websocketpp.git third_party/websocketpp && \
     git clone https://github.com/chriskohlhoff/asio.git third_party/asio
+
+# Copy the source code
+COPY . .
 
 # Create a build directory
 RUN cmake -B build -S . -G Ninja

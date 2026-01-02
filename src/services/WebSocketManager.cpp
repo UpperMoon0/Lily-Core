@@ -396,6 +396,7 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
 
             try {
                 _echo_client.send(_echo_connection, audio_data.data(), audio_data.size(), websocketpp::frame::opcode::binary);
+                std::cout << "Sent " << audio_data.size() << " bytes to Echo service" << std::endl;
             } catch (const std::exception& e) {
                 std::cerr << "Error sending audio to Echo service: " << e.what() << std::endl;
             }

@@ -17,8 +17,8 @@
     {
       "id": "echo",
       "name": "Echo",
-      "http_url": "http://echo:8003",
-      "websocket_url": "",
+      "http_url": "http://echo:8000",
+      "websocket_url": "ws://echo:8000",
       "mcp": false
     }
   ]
