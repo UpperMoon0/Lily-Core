@@ -45,7 +45,7 @@ namespace lily {
             std::future<void> _discovery_future;
             std::atomic<bool> _discovery_running;
 
-            void load_services();
+            void discover_services_from_consul();
             std::vector<nlohmann::json> discover_tools_from_server(const std::string& server_url);
             nlohmann::json execute_tool_on_server(const std::string& server_url, const std::string& tool_name, const nlohmann::json& parameters);
 
