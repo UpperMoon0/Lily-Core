@@ -52,9 +52,6 @@ WORKDIR /app
 # Copy the built executable from the builder stage
 COPY --from=builder /app/build/lily_core .
 
-# Copy the tool servers configuration
-COPY services.json .
-
 # Copy the include directory for Swagger JSON
 COPY --from=builder /app/include ./include
 
