@@ -27,6 +27,7 @@ set(SOURCES
     src/services/MemoryService.cpp
     src/services/Service.cpp
     src/services/TTSService.cpp
+    src/services/EchoService.cpp
     src/services/HTTPServer.cpp
     src/services/WebSocketManager.cpp
     src/utils/SystemMetrics.cpp

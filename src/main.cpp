@@ -7,6 +7,7 @@
 #include "lily/services/MemoryService.hpp"
 #include "lily/services/Service.hpp"
 #include "lily/services/TTSService.hpp"
+#include "lily/services/EchoService.hpp"
 #include "lily/services/WebSocketManager.hpp"
 #include "lily/services/HTTPServer.hpp"
 #include <thread>
@@ -32,27 +33,62 @@ int main() {
     }
 
     auto tts_service = std::make_shared<TTSService>();
+    auto echo_service = std::make_shared<EchoService>();
     auto tool_service = std::make_shared<Service>();
     tool_service->start_periodic_discovery();  // Start periodic tool discovery
     
-    // Give some time for service discovery to complete
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    
-    // Try to connect to TTS provider
-    auto discovered_servers = tool_service->get_discovered_servers();
-    auto tools_per_server = tool_service->get_tools_per_server();
-    
-    // Look for TTS provider in the discovered services
-    for (const auto& service : tool_service->get_services_info()) {
-        if (service.id == "tts-provider") {
-            std::cout << "Found TTS provider at " << service.http_url << std::endl;
-            if (tts_service->connect(service.websocket_url.empty() ? service.http_url : service.websocket_url)) {
-                std::cout << "Connected to TTS provider successfully." << std::endl;
-            } else {
-                std::cerr << "Failed to connect to TTS provider." << std::endl;
+    // Retry connection loop to ensure services are discovered
+    int max_retries = 30; // 30 retries * 2 seconds = 60 seconds
+    int retry_count = 0;
+    bool echo_connected = false;
+    bool tts_connected = false;
+
+    while (retry_count < max_retries) {
+        // Refresh discovered services
+        auto services = tool_service->get_services_info();
+
+        // Try to connect to TTS provider if not already connected
+        if (!tts_connected) {
+            for (const auto& service : services) {
+                if (service.id == "tts-provider") {
+                    std::cout << "Found TTS provider at " << service.http_url << std::endl;
+                    if (tts_service->connect(service.websocket_url.empty() ? service.http_url : service.websocket_url)) {
+                        std::cout << "Connected to TTS provider successfully." << std::endl;
+                        tts_connected = true;
+                    }
+                }
             }
+        }
+
+        // Try to connect to Echo provider if not already connected
+        if (!echo_connected) {
+            for (const auto& service : services) {
+                if (service.id == "echo") {
+                    std::cout << "Found Echo provider at " << service.http_url << std::endl;
+                    if (echo_service->connect(service.http_url)) {
+                        std::cout << "Connected to Echo provider successfully." << std::endl;
+                        echo_connected = true;
+                    }
+                }
+            }
+        }
+
+        // If Echo is connected, we can proceed (TTS is optional but good to have)
+        if (echo_connected) {
+            std::cout << "Critical services (Echo) connected. Proceeding." << std::endl;
             break;
         }
+
+        if (retry_count % 5 == 0) {
+            std::cout << "Waiting for critical services... (Echo connected: " << (echo_connected ? "YES" : "NO") << ", TTS connected: " << (tts_connected ? "YES" : "NO") << ")" << std::endl;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        retry_count++;
+    }
+
+    if (!echo_connected) {
+        std::cerr << "Warning: critical services (Echo) failed to connect after timeout. Speech features may not work." << std::endl;
     }
     
     auto memory_service = std::make_shared<MemoryService>();
@@ -63,11 +99,17 @@ int main() {
         *memory_service,
         *tool_service.get(),
         *tts_service,
+        *echo_service,
         *websocket_manager
     );
 
     http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager);
     http_server_ptr->start();
+
+    websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
+        std::cout << "[DEBUG] Received " << data.size() << " bytes from user " << user_id << std::endl;
+        chat_service->handle_audio_stream(data, user_id);
+    });
 
     websocket_manager->set_port(9002);
     websocket_manager->run();

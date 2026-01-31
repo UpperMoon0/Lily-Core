@@ -270,6 +270,15 @@ void HTTPServer::handle_get(http_request request) {
         response.set_body(response_json);
         response.headers().add("Access-Control-Allow-Origin", "*");
         request.reply(response);
+    } else if (path == "/health") {
+        web::json::value response_json = web::json::value::object();
+        response_json["status"] = web::json::value::string("ok");
+        response_json["timestamp"] = web::json::value::string(utility::datetime::utc_now().to_string());
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
     } else {
         http_response response(status_codes::NotFound);
         response.headers().add("Access-Control-Allow-Origin", "*");

@@ -2,7 +2,10 @@
 FROM debian:bullseye AS builder
 
 # Install build tools and dependencies
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y \
     g++ \
     cmake \
     ninja-build \
@@ -12,39 +15,45 @@ RUN apt-get update && apt-get install -y \
     libcoarrays-openmpi-dev \
     libcpprest-dev \
     libssl-dev \
-    pkg-config
+    pkg-config \
+    ccache
 
 # Set the working directory
 WORKDIR /app
-
-# Copy the source code
-COPY . .
 
 # Create a directory for third-party libraries
 RUN mkdir -p third_party
 
 # Clone third-party libraries
+# We do this BEFORE copying source code so changes to source don't trigger a re-download of libs
 RUN git clone https://github.com/nlohmann/json.git third_party/json && \
     git clone https://github.com/zaphoyd/websocketpp.git third_party/websocketpp && \
     git clone https://github.com/chriskohlhoff/asio.git third_party/asio
 
+# Copy the source code
+COPY . .
+
 # Create a build directory
-RUN cmake -B build -S . -G Ninja
+# Use ccache for compilation
+ENV CCACHE_DIR=/root/.cache/ccache
+RUN cmake -B build -S . -G Ninja -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
 # Build the project
-RUN cmake --build build
+RUN --mount=type=cache,target=/root/.cache/ccache cmake --build build
 
 # Stage 2: Create the final image
 FROM debian:bullseye-slim
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y \
     ca-certificates \
     libcpprest2.10 \
     libboost-system1.74.0 \
     libboost-thread1.74.0 \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+    libssl1.1
 
 # Set the working directory
 WORKDIR /app
