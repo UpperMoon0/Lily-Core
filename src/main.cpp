@@ -111,15 +111,6 @@ int main() {
     http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager, *agent_loop_service);
     http_server_ptr->start();
 
-    websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
-        std::cout << "[DEBUG] Received " << data.size() << " bytes from user " << user_id << std::endl;
-        chat_service->handle_audio_stream(data, user_id);
-    });
-
-    websocket_manager->set_port(9002);
-    websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
-    websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
-    
     // Set binary message handler for audio data
     websocket_manager->set_binary_message_handler([&chat_service, &websocket_manager, tool_service](const std::vector<uint8_t>& audio_data) {
         // Send audio data to Echo service via WebSocket for streaming transcription
@@ -128,6 +119,10 @@ int main() {
         // Send audio data to Echo service
         websocket_manager->send_audio_to_echo(audio_data);
     });
+
+    websocket_manager->set_port(9002);
+    websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
+    websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
 
     // Set Echo message handler to process transcription results
     websocket_manager->set_echo_message_handler([&chat_service, &websocket_manager](const nlohmann::json& message) {
