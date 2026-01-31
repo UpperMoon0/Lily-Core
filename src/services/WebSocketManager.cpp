@@ -221,6 +221,17 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 }
             }
         }
+
+        void WebSocketManager::on_message_binary(const ConnectionHandle& conn, const std::vector<uint8_t>& message) {
+            // Check if connection is associated with a user
+            auto it = _connection_to_user.find(conn);
+            std::string user_id = (it != _connection_to_user.end()) ? it->second : "";
+
+            if (_binary_message_handler) {
+                _binary_message_handler(message, user_id);
+            }
+        }
+
         void WebSocketManager::set_message_handler(const MessageHandler& handler) {
             _message_handler = handler;
         }

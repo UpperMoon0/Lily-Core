@@ -6,6 +6,7 @@
 #include <cpprest/filestream.h>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 
 using namespace web;
 using namespace web::http;
@@ -14,7 +15,7 @@ using namespace web::http::client;
 namespace lily {
     namespace services {
         Service::Service() : _discovery_running(false) {
-            load_services();
+            discover_services_from_consul();
             discover_tools();
         }
 
@@ -22,35 +23,75 @@ namespace lily {
             stop_periodic_discovery();
         }
 
-        void Service::load_services() {
+        void Service::discover_services_from_consul() {
             try {
-                // Clear the existing services before loading new ones
                 _services.clear();
                 
-                std::ifstream file("services.json");
-                if (file.is_open()) {
-                    nlohmann::json j;
-                    file >> j;
-                    if (j.contains("services") && j["services"].is_array()) {
-                        for (const auto& service : j["services"]) {
-                            if (service.is_object() &&
-                                service.contains("id") && service.contains("name") && service.contains("http_url") && service.contains("mcp")) {
-                                ServiceInfo info;
-                                info.id = service["id"].get<std::string>();
-                                info.name = service["name"].get<std::string>();
-                                info.http_url = service["http_url"].get<std::string>();
-                                info.websocket_url = service.value("websocket_url", ""); // Default to empty string if not present
-                                info.mcp = service["mcp"].get<bool>();
-                                _services.push_back(info);
-                            }
-                        }
-                    }
-                    file.close();
-                } else {
-                    std::cerr << "Failed to open services.json" << std::endl;
+                std::string consul_host = "http://consul:8500";
+                if (const char* env_p = std::getenv("CONSUL_HTTP_ADDR")) {
+                     std::string env_s(env_p);
+                     if (env_s.find("://") == std::string::npos) {
+                         consul_host = "http://" + env_s;
+                     } else {
+                         consul_host = env_s;
+                     }
+                }
+                
+                http_client client(utility::conversions::to_string_t(consul_host));
+                
+                // 1. Get List of Services
+                auto response = client.request(methods::GET, U("/v1/catalog/services")).get();
+                if (response.status_code() == status_codes::OK) {
+                     auto services_json = response.extract_json().get();
+                     auto services_obj = services_json.as_object();
+                     
+                     for (auto it = services_obj.begin(); it != services_obj.end(); ++it) {
+                         std::string service_name = utility::conversions::to_utf8string(it->first);
+                         if (service_name == "consul") continue;
+                         
+                         // 2. Get Healthy Nodes
+                         uri_builder builder(U("/v1/health/service/" + utility::conversions::to_string_t(service_name)));
+                         builder.append_query(U("passing"), U("true"));
+                         
+                         auto health_resp = client.request(methods::GET, builder.to_string()).get();
+                         if (health_resp.status_code() == status_codes::OK) {
+                              auto nodes_json = health_resp.extract_json().get();
+                              if (nodes_json.is_array()) {
+                                  auto nodes = nodes_json.as_array();
+                                  if (nodes.size() > 0) {
+                                      auto node = nodes[0]; // Pick first healthy node
+                                      auto service_obj = node[U("Service")];
+                                      
+                                      ServiceInfo info;
+                                      info.id = service_name;
+                                      info.name = service_name;
+                                      
+                                      std::string address = utility::conversions::to_utf8string(service_obj[U("Address")].as_string());
+                                      int port = service_obj[U("Port")].as_integer();
+                                      
+                                      info.http_url = "http://" + address + ":" + std::to_string(port);
+                                      info.websocket_url = ""; // Default, allow main.cpp to infer or use metadata later
+                                      
+                                      info.mcp = false;
+                                      if (service_obj.has_field(U("Tags"))) {
+                                          auto tags = service_obj[U("Tags")].as_array();
+                                          for (const auto& tag : tags) {
+                                               if (utility::conversions::to_utf8string(tag.as_string()) == "mcp") {
+                                                   info.mcp = true;
+                                                   break;
+                                               }
+                                          }
+                                      }
+                                      
+                                      _services.push_back(info);
+                                      std::cout << "[ServiceDiscovery] Discovered: " << service_name << " at " << info.http_url << std::endl;
+                                  }
+                              }
+                         }
+                     }
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Error loading services: " << e.what() << std::endl;
+                std::cerr << "Error discovering services from Consul: " << e.what() << std::endl;
             }
         }
 
@@ -88,7 +129,7 @@ namespace lily {
                 request[U("id")] = json::value::number(1);
 
                 // Send request
-                auto response = client.request(methods::POST, U("/mcp"), request).get();
+                auto response = client.request(methods::POST, U("/v1/mcp"), request).get();
 
                 if (response.status_code() == status_codes::OK) {
                     auto response_json = response.extract_json().get();
@@ -121,7 +162,7 @@ namespace lily {
             _discovery_future = std::async(std::launch::async, [this]() {
                 while (_discovery_running) {
                     try {
-                        load_services(); // Reload services from services.json
+                        discover_services_from_consul(); 
                         discover_tools();
                         std::this_thread::sleep_for(std::chrono::seconds(30)); // Discover every 30 seconds
                     } catch (const std::exception& e) {

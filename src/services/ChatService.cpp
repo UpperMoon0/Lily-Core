@@ -1,6 +1,8 @@
 #include <lily/services/ChatService.hpp>
+#include <lily/services/EchoService.hpp>
 #include <iostream>
 #include <chrono>
+#include <nlohmann/json.hpp>
 
 namespace lily {
     namespace services {
@@ -9,12 +11,30 @@ namespace lily {
             MemoryService& memoryService,
             Service& toolService,
             TTSService& ttsService,
+            EchoService& echoService,
             WebSocketManager& webSocketManager
         ) : _agentLoopService(agentLoopService),
             _memoryService(memoryService),
             _toolService(toolService),
             _ttsService(ttsService),
-            _webSocketManager(webSocketManager) {}
+            _echoService(echoService),
+            _webSocketManager(webSocketManager) {
+            
+            // Set up the transcription handler
+            _echoService.set_transcription_handler([this](const std::string& payload) {
+                try {
+                    auto json = nlohmann::json::parse(payload);
+                    std::cout << "Received transcription from Echo: " << payload << std::endl;
+                    
+                    // Broadcast to all connected users (since we don't track audio-user mapping perfectly in this simple version)
+                    // We'll prefix with "transcription:" as expected by the client/test
+                    std::string message = "transcription:" + payload;
+                    _webSocketManager.broadcast(message);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error handling transcription: " << e.what() << std::endl;
+                }
+            });
+        }
 
         std::string ChatService::handle_chat_message(const std::string& message, const std::string& user_id) {
             // Default to no TTS
@@ -54,6 +74,11 @@ namespace lily {
             }
 
             return response;
+        }
+
+        void ChatService::handle_audio_stream(const std::vector<uint8_t>& audio_data, const std::string& user_id) {
+            // Forward audio data to EchoService
+            _echoService.send_audio(audio_data);
         }
     }
 }
