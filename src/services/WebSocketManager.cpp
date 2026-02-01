@@ -216,8 +216,15 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 const auto& payload = msg->get_payload();
                 std::vector<uint8_t> binary_data(payload.begin(), payload.end());
                 
+                // Get user_id from connection mapping
+                std::string user_id;
+                auto it = _connection_to_user.find(conn);
+                if (it != _connection_to_user.end()) {
+                    user_id = it->second;
+                }
+                
                 if (_binary_message_handler) {
-                    _binary_message_handler(binary_data);
+                    _binary_message_handler(binary_data, user_id);
                 }
             }
         }

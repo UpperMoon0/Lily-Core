@@ -21,7 +21,7 @@ namespace lily {
         using Server = websocketpp::server<websocketpp::config::asio>;
         using ConnectionHandle = websocketpp::connection_hdl;
         using MessageHandler = std::function<void(const std::string&)>;
-        using BinaryMessageHandler = std::function<void(const std::vector<uint8_t>&)>;
+        using BinaryMessageHandler = std::function<void(const std::vector<uint8_t>&, const std::string&)>;
 
         // Echo service WebSocket client
         using EchoClient = websocketpp::client<websocketpp::config::asio>;
