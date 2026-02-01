@@ -48,10 +48,17 @@ jobs:
             docker stop lily-core-test 2>/dev/null || true
             exit 0
           fi
+          # Check if container is still running
+          if ! docker ps | grep -q lily-core-test; then
+            echo "✗ Container exited unexpectedly"
+            docker logs lily-core-test 2>/dev/null || true
+            exit 1
+          fi
           sleep 1
         done
         
         echo "✗ Health check failed - HTTP server not responding"
+        docker logs lily-core-test 2>/dev/null || true
         docker stop lily-core-test 2>/dev/null || true
         exit 1
 
