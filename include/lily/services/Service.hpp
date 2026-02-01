@@ -9,6 +9,7 @@
 #include <chrono>
 #include <map>
 #include <atomic>
+#include <thread>
 
 namespace lily {
     namespace services {
@@ -38,12 +39,18 @@ namespace lily {
             // Getter for tools per server
             std::map<std::string, std::vector<nlohmann::json>> get_tools_per_server() const;
 
+            // Service registration methods
+            bool register_service(const std::string& service_name, int port, const std::vector<std::string>& tags);
+            void register_all_services(int http_port, int ws_port);
+            void deregister_service(const std::string& service_id);
+
         private:
             std::vector<nlohmann::json> _tools;
             std::vector<ServiceInfo> _services;
             std::vector<std::string> _discovered_servers;
             std::future<void> _discovery_future;
             std::atomic<bool> _discovery_running;
+            std::vector<std::string> _registered_service_ids;
 
             void discover_services_from_consul();
             std::vector<nlohmann::json> discover_tools_from_server(const std::string& server_url);

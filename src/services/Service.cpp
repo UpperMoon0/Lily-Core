@@ -7,6 +7,7 @@
 #include <thread>
 #include <chrono>
 #include <cstdlib>
+#include <unistd.h>
 
 using namespace web;
 using namespace web::http;
@@ -21,6 +22,109 @@ namespace lily {
 
         Service::~Service() {
             stop_periodic_discovery();
+            // Deregister all registered services
+            for (const auto& service_id : _registered_service_ids) {
+                deregister_service(service_id);
+            }
+        }
+
+        // ==================== SERVICE REGISTRATION ====================
+
+        bool Service::register_service(const std::string& service_name, int port, const std::vector<std::string>& tags) {
+            try {
+                std::string consul_host = "http://consul:8500";
+                if (const char* env_p = std::getenv("CONSUL_HTTP_ADDR")) {
+                    std::string env_s(env_p);
+                    if (env_s.find("://") == std::string::npos) {
+                        consul_host = "http://" + env_s;
+                    } else {
+                        consul_host = env_s;
+                    }
+                }
+
+                // Get hostname
+                char hostname[256];
+                gethostname(hostname, sizeof(hostname));
+                std::string hostname_str(hostname);
+                
+                std::string service_id = service_name + "-" + hostname_str + "-" + std::to_string(port);
+
+                // Build health check URL
+                std::string health_check_url = "http://" + hostname_str + ":" + std::to_string(port) + "/health";
+
+                // Build registration payload
+                nlohmann::json payload = {
+                    {"ID", service_id},
+                    {"Name", service_name},
+                    {"Tags", tags},
+                    {"Address", hostname_str},
+                    {"Port", port},
+                    {"Check", {
+                        {"HTTP", health_check_url},
+                        {"Interval", "10s"},
+                        {"Timeout", "2s"},
+                        {"DeregisterCriticalServiceAfter", "1m"}
+                    }}
+                };
+
+                std::string url = consul_host + "/v1/agent/service/register";
+                http_client client(utility::conversions::to_string_t(url));
+
+                json::value json_payload = json::value::parse(utility::conversions::to_string_t(payload.dump()));
+                auto response = client.request(methods::PUT, U(""), json_payload).get();
+
+                if (response.status_code() == status_codes::OK) {
+                    _registered_service_ids.push_back(service_id);
+                    std::cout << "[ServiceDiscovery] Registered " << service_name << " at " << hostname_str << ":" << port << std::endl;
+                    return true;
+                } else {
+                    std::cerr << "[ServiceDiscovery] Failed to register " << service_name << ": HTTP " << response.status_code() << std::endl;
+                    return false;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[ServiceDiscovery] Error registering service " << service_name << ": " << e.what() << std::endl;
+                return false;
+            }
+        }
+
+        void Service::register_all_services(int http_port, int ws_port) {
+            // Register HTTP endpoint with "http" tag
+            bool http_registered = register_service("lily-core", http_port, {"http", "api"});
+            
+            // Register WebSocket endpoint with "websocket" tag
+            bool ws_registered = register_service("lily-core", ws_port, {"websocket", "ws"});
+            
+            if (http_registered && ws_registered) {
+                std::cout << "[ServiceDiscovery] Lily-Core fully registered with Consul (HTTP: " << http_port << ", WS: " << ws_port << ")" << std::endl;
+            } else if (http_registered) {
+                std::cout << "[ServiceDiscovery] Lily-Core HTTP endpoint registered (WS registration failed)" << std::endl;
+            } else if (ws_registered) {
+                std::cout << "[ServiceDiscovery] Lily-Core WebSocket endpoint registered (HTTP registration failed)" << std::endl;
+            }
+        }
+
+        void Service::deregister_service(const std::string& service_id) {
+            try {
+                std::string consul_host = "http://consul:8500";
+                if (const char* env_p = std::getenv("CONSUL_HTTP_ADDR")) {
+                    std::string env_s(env_p);
+                    if (env_s.find("://") == std::string::npos) {
+                        consul_host = "http://" + env_s;
+                    } else {
+                        consul_host = env_s;
+                    }
+                }
+
+                std::string url = consul_host + "/v1/agent/service/deregister/" + service_id;
+                http_client client(utility::conversions::to_string_t(url));
+                auto response = client.request(methods::PUT, U("")).get();
+
+                if (response.status_code() == status_codes::OK) {
+                    std::cout << "[ServiceDiscovery] Deregistered service: " << service_id << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[ServiceDiscovery] Error deregistering service " << service_id << ": " << e.what() << std::endl;
+            }
         }
 
         void Service::discover_services_from_consul() {

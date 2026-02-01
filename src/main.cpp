@@ -31,70 +31,93 @@ void signal_handler(int signal) {
     exit(signal);
 }
 
-int main() {
-    if (getenv("GEMINI_API_KEY") == nullptr) {
-        std::cerr << "Error: GEMINI_API_KEY environment variable not set." << std::endl;
-        return 1;
+// Background service connector - runs in a separate thread
+void connect_services_async(
+    std::shared_ptr<TTSService> tts_service,
+    std::shared_ptr<EchoService> echo_service,
+    std::shared_ptr<Service> tool_service,
+    std::atomic<bool>& tts_available,
+    std::atomic<bool>& echo_available
+) {
+    std::cout << "[ServiceConnector] Starting background service discovery..." << std::endl;
+    
+    int retry_count = 0;
+    while (true) {
+        // Only check for services if not already connected
+        if (!tts_available || !echo_available) {
+            auto services = tool_service->get_services_info();
+            
+            // Try to connect to TTS provider
+            if (!tts_available) {
+                for (const auto& service : services) {
+                    if (service.id == "tts-provider") {
+                        if (tts_service->connect(service.websocket_url.empty() ? service.http_url : service.websocket_url)) {
+                            tts_available = true;
+                            std::cout << "[ServiceConnector] Connected to TTS provider at " << service.http_url << std::endl;
+                        }
+                    }
+                }
+            }
+            
+            // Try to connect to Echo provider
+            if (!echo_available) {
+                for (const auto& service : services) {
+                    if (service.id == "echo") {
+                        if (echo_service->connect(service.http_url)) {
+                            echo_available = true;
+                            std::cout << "[ServiceConnector] Connected to Echo provider at " << service.http_url << std::endl;
+                        }
+                    }
+                }
+            }
+            
+            // Log progress
+            if (retry_count % 15 == 0) {
+                std::cout << "[ServiceConnector] Status - Echo: " << (echo_available ? "connected" : "waiting")
+                          << ", TTS: " << (tts_available ? "connected" : "waiting") << std::endl;
+            }
+        }
+        
+        // Try to reconnect every 2 seconds if not connected, otherwise check less frequently
+        if (!tts_available || !echo_available) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        } else {
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+        }
+        retry_count++;
     }
+}
+
+int main() {
+    // Check for optional environment variables
+    bool gemini_available = (getenv("GEMINI_API_KEY") != nullptr);
+    if (!gemini_available) {
+        std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
+    }
+    
+    // Track service availability for health monitoring (atomic for thread safety)
+    std::atomic<bool> tts_available{false};
+    std::atomic<bool> echo_available{false};
 
     auto tts_service = std::make_shared<TTSService>();
     auto echo_service = std::make_shared<EchoService>();
     auto tool_service = std::make_shared<Service>();
-    tool_service->start_periodic_discovery();  // Start periodic tool discovery
     
-    // Retry connection loop to ensure services are discovered
-    int max_retries = 30; // 30 retries * 2 seconds = 60 seconds
-    int retry_count = 0;
-    bool echo_connected = false;
-    bool tts_connected = false;
-
-    while (retry_count < max_retries) {
-        // Refresh discovered services
-        auto services = tool_service->get_services_info();
-
-        // Try to connect to TTS provider if not already connected
-        if (!tts_connected) {
-            for (const auto& service : services) {
-                if (service.id == "tts-provider") {
-                    std::cout << "Found TTS provider at " << service.http_url << std::endl;
-                    if (tts_service->connect(service.websocket_url.empty() ? service.http_url : service.websocket_url)) {
-                        std::cout << "Connected to TTS provider successfully." << std::endl;
-                        tts_connected = true;
-                    }
-                }
-            }
-        }
-
-        // Try to connect to Echo provider if not already connected
-        if (!echo_connected) {
-            for (const auto& service : services) {
-                if (service.id == "echo") {
-                    std::cout << "Found Echo provider at " << service.http_url << std::endl;
-                    if (echo_service->connect(service.http_url)) {
-                        std::cout << "Connected to Echo provider successfully." << std::endl;
-                        echo_connected = true;
-                    }
-                }
-            }
-        }
-
-        // If Echo is connected, we can proceed (TTS is optional but good to have)
-        if (echo_connected) {
-            std::cout << "Critical services (Echo) connected. Proceeding." << std::endl;
-            break;
-        }
-
-        if (retry_count % 5 == 0) {
-            std::cout << "Waiting for critical services... (Echo connected: " << (echo_connected ? "YES" : "NO") << ", TTS connected: " << (tts_connected ? "YES" : "NO") << ")" << std::endl;
-        }
-        
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        retry_count++;
-    }
-
-    if (!echo_connected) {
-        std::cerr << "Warning: critical services (Echo) failed to connect after timeout. Speech features may not work." << std::endl;
-    }
+    // Register Lily-Core with Consul for both HTTP (8000) and WebSocket (9002) endpoints
+    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
+    tool_service->register_all_services(8000, 9002);
+    
+    // Start periodic discovery in background (discovers and updates service list)
+    tool_service->start_periodic_discovery();
+    
+    // Also start background service connector for Echo/TTS
+    std::thread service_connector(connect_services_async, 
+                                   tts_service, echo_service, tool_service,
+                                   std::ref(tts_available), std::ref(echo_available));
+    service_connector.detach();
+    
+    // Start HTTP server immediately - don't wait for services
+    std::cout << "[Main] Starting HTTP server on port 8000..." << std::endl;
     
     auto memory_service = std::make_shared<MemoryService>();
     auto agent_loop_service = std::make_shared<AgentLoopService>(*memory_service, *tool_service.get());
@@ -111,15 +134,11 @@ int main() {
     http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager, *agent_loop_service);
     http_server_ptr->start();
 
-    // Set binary message handler for audio data
-    websocket_manager->set_binary_message_handler([&chat_service, &websocket_manager, tool_service](const std::vector<uint8_t>& audio_data) {
-        // Send audio data to Echo service via WebSocket for streaming transcription
-        std::cout << "Received binary audio data of size: " << audio_data.size() << " bytes" << std::endl;
-
-        // Send audio data to Echo service
-        websocket_manager->send_audio_to_echo(audio_data);
+    std::cout << "[Main] Starting WebSocket server on port 9002..." << std::endl;
+    websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
+        chat_service->handle_audio_stream(data, user_id);
     });
-
+    
     websocket_manager->set_port(9002);
     websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
     websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
@@ -190,6 +209,9 @@ int main() {
 
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+
+    std::cout << "[Main] Lily-Core is ready! (Gemini: " << (gemini_available ? "available" : "disabled")
+              << ", Echo: connecting asynchronously, TTS: connecting asynchronously)" << std::endl;
 
     // Keep the main thread alive to allow the server to run
     std::promise<void>().get_future().wait();
