@@ -35,11 +35,25 @@ jobs:
 
     - name: Run container health check
       run: |
-        docker run --rm --name lily-core-test nstut/lily-core:build-test wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
-
-    - name: Stop test container
-      if: always()
-      run: docker stop lily-core-test 2>/dev/null || true
+        # Start container in detached mode
+        docker run -d --rm --name lily-core-test \
+          -p 8000:8000 \
+          -p 9002:9002 \
+          nstut/lily-core:build-test
+        
+        # Wait for service to be ready (up to 30 seconds)
+        for i in {1..30}; do
+          if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+            echo "✓ Health check passed - HTTP server is responding"
+            docker stop lily-core-test 2>/dev/null || true
+            exit 0
+          fi
+          sleep 1
+        done
+        
+        echo "✗ Health check failed - HTTP server not responding"
+        docker stop lily-core-test 2>/dev/null || true
+        exit 1
 
   lint:
     runs-on: ubuntu-latest
