@@ -1,5 +1,4 @@
 #include "lily/utils/SystemMetrics.hpp"
-#include "lily/services/Service.hpp"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -117,87 +116,7 @@ SystemMetrics SystemMetricsCollector::get_system_metrics() {
     return metrics;
 }
 
-std::vector<ServiceStatus> SystemMetricsCollector::get_service_statuses(lily::services::Service* tool_service) {
-    std::vector<ServiceStatus> services;
-    
-    // Add status for main services
-    ServiceStatus core_service;
-    core_service.name = "Lily-Core";
-    core_service.status = "healthy";
-    core_service.details["description"] = "Main application service";
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    core_service.last_updated = std::ctime(&time_t);
-    // Remove newline character at the end of ctime
-    if (!core_service.last_updated.empty()) {
-        core_service.last_updated.pop_back();
-    }
-    services.push_back(core_service);
-    
-    // Add discovered services from Service class
-    if (tool_service) {
-        const auto& service_infos = tool_service->get_services_info();
-        auto discovered_servers = tool_service->get_discovered_servers();
-        auto tools_per_server = tool_service->get_tools_per_server();
-        size_t total_tools = tool_service->get_tool_count();
-        
-        for (const auto& service_info : service_infos) {
-            ServiceStatus service_status;
-            service_status.name = service_info.name;
-            service_status.details["http_url"] = service_info.http_url;
-
-            if (service_info.mcp) {
-                bool is_active = std::find(discovered_servers.begin(), discovered_servers.end(), service_info.http_url) != discovered_servers.end();
-                service_status.status = is_active ? "healthy" : "down";
-                service_status.details["type"] = "MCP Server";
-                if (is_active) {
-                    auto it = tools_per_server.find(service_info.http_url);
-                    if (it != tools_per_server.end()) {
-                        service_status.details["tool_count"] = std::to_string(it->second.size());
-                        
-                        // Add tool names and descriptions
-                        std::string tools_str;
-                        for (const auto& tool : it->second) {
-                            if (tool.contains("name")) {
-                                std::string name = tool["name"].get<std::string>();
-                                std::string description = tool.value("description", "");
-                                if (!tools_str.empty()) {
-                                    tools_str += "|";
-                                }
-                                tools_str += name + ":" + description;
-                            }
-                        }
-                        if (!tools_str.empty()) {
-                            service_status.details["tools"] = tools_str;
-                        }
-                    }
-                }
-            } else {
-                // For non-MCP services, we can add a simple health check if needed
-                // For now, we'll just mark them as "healthy" since they are registered
-                service_status.status = "healthy";
-                service_status.details["type"] = "Registered Service";
-            }
-            
-            service_status.last_updated = core_service.last_updated;
-            services.push_back(service_status);
-        }
-        
-        // Add summary information
-        ServiceStatus mcp_summary;
-        mcp_summary.name = "MCP Services Summary";
-        mcp_summary.status = "healthy";
-        mcp_summary.details["active_mcp_servers"] = std::to_string(discovered_servers.size());
-        mcp_summary.details["total_tools"] = std::to_string(total_tools);
-        mcp_summary.details["description"] = "Summary of all MCP services";
-        mcp_summary.last_updated = core_service.last_updated;
-        services.push_back(mcp_summary);
-    }
-    
-    return services;
-}
-
-MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::Service* tool_service) {
+MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& service_name, const std::string& version) {
     MonitoringData data;
     
     data.status = "healthy";
@@ -214,7 +133,6 @@ MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& se
     }
     
     data.metrics = get_system_metrics();
-    data.services = get_service_statuses(tool_service);
     
     // Add some details
     data.details["description"] = "Lily Core Monitoring Service";
