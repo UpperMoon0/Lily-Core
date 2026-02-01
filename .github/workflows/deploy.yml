@@ -54,6 +54,6 @@ jobs:
       uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.GH_PAT }}
-        repository: NsTut/LilyIV
+        repository: UpperMoon0/LilyIV
         event-type: lily-core-pushed
         client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "image_tag": "${{ env.IMAGE_TAG }}"}'
