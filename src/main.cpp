@@ -35,6 +35,11 @@ int main() {
     auto tts_service = std::make_shared<TTSService>();
     auto echo_service = std::make_shared<EchoService>();
     auto tool_service = std::make_shared<Service>();
+    
+    // Register Lily-Core with Consul for both HTTP (8000) and WebSocket (9002) endpoints
+    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
+    tool_service->register_all_services(8000, 9002);
+    
     tool_service->start_periodic_discovery();  // Start periodic tool discovery
     
     // Retry connection loop to ensure services are discovered
