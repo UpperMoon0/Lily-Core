@@ -114,7 +114,7 @@ void HTTPServer::handle_get(http_request request) {
     if (path == "/monitoring") {
         try {
             lily::utils::SystemMetricsCollector metrics_collector;
-            auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0", &_tool_service);
+            auto monitoring_data = metrics_collector.get_monitoring_data("Lily-Core", "1.0.0");
             
             web::json::value response_json = web::json::value::object();
             response_json["status"] = web::json::value::string(monitoring_data.status);
@@ -128,24 +128,6 @@ void HTTPServer::handle_get(http_request request) {
             metrics_json["disk_usage"] = web::json::value::number(monitoring_data.metrics.disk_usage);
             metrics_json["uptime"] = web::json::value::string(monitoring_data.metrics.uptime);
             response_json["metrics"] = metrics_json;
-            
-            web::json::value services_json = web::json::value::array();
-            for (size_t i = 0; i < monitoring_data.services.size(); ++i) {
-                const auto& service = monitoring_data.services[i];
-                web::json::value service_json = web::json::value::object();
-                service_json["name"] = web::json::value::string(service.name);
-                service_json["status"] = web::json::value::string(service.status);
-                
-                web::json::value details_json = web::json::value::object();
-                for (const auto& detail : service.details) {
-                    details_json[detail.first] = web::json::value::string(detail.second);
-                }
-                service_json["details"] = details_json;
-                service_json["last_updated"] = web::json::value::string(service.last_updated);
-                
-                services_json[i] = service_json;
-            }
-            response_json["services"] = services_json;
             
             web::json::value details_json = web::json::value::object();
             for (const auto& detail : monitoring_data.details) {

@@ -18,13 +18,6 @@ namespace services {
 
 namespace utils {
 
-struct ServiceStatus {
-    std::string name;
-    std::string status;
-    std::map<std::string, std::string> details;
-    std::string last_updated;
-};
-
 struct SystemMetrics {
     double cpu_usage;
     double memory_usage;
@@ -38,7 +31,6 @@ struct MonitoringData {
     std::string version;
     std::string timestamp;
     SystemMetrics metrics;
-    std::vector<ServiceStatus> services;
     std::map<std::string, std::string> details;
 };
 
@@ -48,8 +40,7 @@ public:
     ~SystemMetricsCollector();
     
     SystemMetrics get_system_metrics();
-    std::vector<ServiceStatus> get_service_statuses(lily::services::Service* tool_service = nullptr);
-    MonitoringData get_monitoring_data(const std::string& service_name, const std::string& version, lily::services::Service* tool_service = nullptr);
+    MonitoringData get_monitoring_data(const std::string& service_name, const std::string& version);
     
 private:
     std::chrono::steady_clock::time_point start_time;
