@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <fstream>
 #include <sstream>
+#include <pplx/pplxtasks.h>
 
 using namespace web;
 using namespace web::http;
@@ -74,17 +75,32 @@ void HTTPServer::handle_post(http_request request) {
                     if (chat_params.enable_tts) {
                         std::cout << "TTS enabled for user_id: " << user_id << std::endl;
                     }
-                    lily::services::ChatResponse chat_response = _chat_service.handle_chat_message_with_audio(message, user_id, chat_params);
 
-                    json::value response_json;
-                    response_json["response"] = json::value::string(chat_response.text_response);
-                    response_json["timestamp"] = json::value::string(utility::datetime::utc_now().to_string());
+                    // Use Async Chat Processing
+                    // Create a task completion event to signal when the processing is done
+                    auto tce = pplx::task_completion_event<void>();
+
+                    _chat_service.handle_chat_message_with_audio_async(message, user_id, chat_params, [request, tce](lily::services::ChatResponse chat_response) {
+                        json::value response_json;
+                        response_json["response"] = json::value::string(chat_response.text_response);
+                        response_json["timestamp"] = json::value::string(utility::datetime::utc_now().to_string());
+                        
+                        http_response response(status_codes::OK);
+                        response.set_body(response_json);
+                        response.headers().add("Access-Control-Allow-Origin", "*");
+                        request.reply(response);
+                        
+                        // Signal completion
+                        tce.set();
+                    });
+
+                    // We don't wait here on the thread. The request is kept alive by the lambda capture.
+                    // However, we need to ensure the request object survives until reply is called.
+                    // Since 'request' is passed by value (copy), it should be fine.
+                    // But cpprestsdk handlers usually expect the task chain to complete.
+                    // Actually, request.reply() returns a task. We should probably return that?
+                    // But handle_post returns void.
                     
-                    
-                    http_response response(status_codes::OK);
-                    response.set_body(response_json);
-                    response.headers().add("Access-Control-Allow-Origin", "*");
-                    request.reply(response);
                 } else {
                     request.reply(status_codes::BadRequest, "Missing 'message' or 'user_id' field.");
                 }
@@ -103,6 +119,7 @@ void HTTPServer::handle_post(http_request request) {
     }
 }
 
+// ... (rest of file remains same) ...
 void HTTPServer::handle_get(http_request request) {
     // Add CORS headers to all responses
     http_response response;

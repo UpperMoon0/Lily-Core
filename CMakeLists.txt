@@ -27,6 +27,7 @@ set(SOURCES
     src/services/ChatService.cpp
     src/services/MemoryService.cpp
     src/services/Service.cpp
+    src/services/SessionService.cpp
     src/services/TTSService.cpp
     src/services/EchoService.cpp
     src/services/HTTPServer.cpp
