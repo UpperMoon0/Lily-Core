@@ -6,6 +6,7 @@
 #include <iostream>
 #include <csignal>
 #include <thread>
+#include <future>
 
 #include "lily/config/AppConfig.hpp"
 #include "lily/core/ApplicationContext.hpp"
@@ -30,8 +31,7 @@ public:
         app->config_ = config::AppConfig::builder()
             .withHttpAddress("0.0.0.0")
             .withHttpPort(8000)
-            .withWebSocketPort(9002)
-            .build();
+            .withWebSocketPort(9002);
         
         // Load from environment
         app->config_.loadFromEnvironment();

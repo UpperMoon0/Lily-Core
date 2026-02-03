@@ -47,19 +47,10 @@ public:
     std::shared_ptr<T> getBean() {
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // First try exact match
-        for (const auto& pair : beans_) {
-            if (auto casted = std::dynamic_pointer_cast<T>(pair.second)) {
-                return casted;
-            }
-        }
-        
-        // Then try factory
-        for (const auto& pair : factories_) {
-            if (auto factory = std::any_cast<CreateFunction>(&pair.second)) {
-                // This won't work directly, simplified version
-            }
-        }
+        // Note: With shared_ptr<void>, we cannot safely implement getBean by type scanning
+        // without additional RTTI storage. For now, this returns nullptr unless we implement
+        // a more complex storage mechanism (e.g., storing type_info).
+        // Use getBeanByName instead.
         
         return nullptr;
     }
@@ -73,7 +64,7 @@ public:
         
         auto it = beans_.find(name);
         if (it != beans_.end()) {
-            return std::dynamic_pointer_cast<T>(it->second);
+            return std::static_pointer_cast<T>(it->second);
         }
         
         return nullptr;
