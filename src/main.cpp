@@ -28,6 +28,9 @@ using namespace web::http::client;
 // Global server pointer for signal handling
 std::unique_ptr<HTTPServer> http_server_ptr;
 
+// Define static member for ApplicationContextHolder
+std::shared_ptr<lily::core::ApplicationContext> lily::core::ApplicationContextHolder::context_ = nullptr;
+
 void signal_handler(int signal) {
     if (http_server_ptr) {
         http_server_ptr->stop();
