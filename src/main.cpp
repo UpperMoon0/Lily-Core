@@ -143,6 +143,69 @@ int main() {
     websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
     websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
 
+    // Set message handler for Discord adapter messages
+    websocket_manager->set_message_handler([chat_service, websocket_manager](const std::string& message) {
+        try {
+            nlohmann::json msg = nlohmann::json::parse(message);
+            std::string type = msg.value("type", "message");
+            std::string user_id = msg.value("user_id", "unknown");
+            std::string text = msg.value("text", "");
+            
+            if (type == "message") {
+                // Regular chat message
+                std::string response = chat_service->handle_chat_message(text, user_id);
+                
+                // Send response back to client
+                nlohmann::json response_msg = {
+                    {"type", "response"},
+                    {"user_id", user_id},
+                    {"text", response}
+                };
+                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+            } else if (type == "session_start") {
+                // Session start - generate greeting with LLM
+                std::string username = msg.value("username", "user");
+                std::string prompt = "The user " + username + " just said 'Hey Lily' to wake you up. Respond with a friendly greeting. Keep it brief and conversational. No markdown formatting.";
+                std::string response = chat_service->handle_chat_message(prompt, user_id);
+                
+                // Send response back to client
+                nlohmann::json response_msg = {
+                    {"type", "session_start"},
+                    {"user_id", user_id},
+                    {"text", response}
+                };
+                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+            } else if (type == "session_end") {
+                // Session end - generate farewell with LLM
+                std::string username = msg.value("username", "user");
+                std::string prompt = "The user " + username + " said 'Goodbye Lily'. Respond with a friendly farewell. Keep it brief and conversational. No markdown formatting.";
+                std::string response = chat_service->handle_chat_message(prompt, user_id);
+                
+                // Send response back to client
+                nlohmann::json response_msg = {
+                    {"type", "session_end"},
+                    {"user_id", user_id},
+                    {"text", response}
+                };
+                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+            } else if (type == "session_no_active") {
+                // User said goodbye but no active session
+                std::string prompt = "The user said 'Goodbye Lily' but there was no active conversation. Respond with a gentle message indicating we weren't chatting. Keep it brief and friendly. No markdown formatting.";
+                std::string response = chat_service->handle_chat_message(prompt, user_id);
+                
+                // Send response back to client
+                nlohmann::json response_msg = {
+                    {"type", "session_no_active"},
+                    {"user_id", user_id},
+                    {"text", response}
+                };
+                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error processing WebSocket message: " << e.what() << std::endl;
+        }
+    });
+
     // Set Echo message handler to process transcription results
     websocket_manager->set_echo_message_handler([&chat_service, &websocket_manager](const nlohmann::json& message) {
         try {

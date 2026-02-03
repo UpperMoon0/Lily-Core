@@ -118,6 +118,19 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
             }
         }
         
+        void WebSocketManager::send_text_to_client_by_id(const std::string& client_id, const std::string& message) {
+            auto it = _connections.find(client_id);
+            if (it != _connections.end()) {
+                try {
+                    _server.send(it->second, message, websocketpp::frame::opcode::text);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error sending text to client_id: " << client_id << ", error: " << e.what() << std::endl;
+                }
+            } else {
+                std::cerr << "Client not found: " << client_id << std::endl;
+            }
+        }
+        
         bool WebSocketManager::is_connection_registered(const std::string& client_id) {
             // Check if the client_id is in the _connections map
             return _connections.find(client_id) != _connections.end();
