@@ -2,6 +2,7 @@
 #include <memory>
 #include <csignal>
 
+#include "lily/LilyApplication.hpp"
 #include "lily/services/AgentLoopService.hpp"
 #include "lily/services/ChatService.hpp"
 #include "lily/services/MemoryService.hpp"
@@ -22,6 +23,7 @@ using namespace web;
 using namespace web::http;
 using namespace web::http::client;
 
+// Global server pointer for signal handling
 std::unique_ptr<HTTPServer> http_server_ptr;
 
 void signal_handler(int signal) {
@@ -31,7 +33,84 @@ void signal_handler(int signal) {
     exit(signal);
 }
 
-// Background service connector - runs in a separate thread
+// ============================================================================
+// Spring Boot-style Bean Configuration
+// ============================================================================
+
+/**
+ * @brief Memory Service Bean Configuration
+ * 
+ * Similar to @Configuration class in Spring Boot.
+ */
+std::shared_ptr<MemoryService> createMemoryService() {
+    return std::make_shared<MemoryService>();
+}
+
+/**
+ * @brief Service (Tool) Bean Configuration
+ */
+std::shared_ptr<Service> createToolService() {
+    auto service = std::make_shared<Service>();
+    service->start_periodic_discovery();
+    return service;
+}
+
+/**
+ * @brief Agent Loop Service Bean Configuration
+ */
+std::shared_ptr<AgentLoopService> createAgentLoopService(
+    std::shared_ptr<MemoryService> memory_service,
+    std::shared_ptr<Service> tool_service
+) {
+    return std::make_shared<AgentLoopService>(*memory_service, *tool_service);
+}
+
+/**
+ * @brief WebSocket Manager Bean Configuration
+ */
+std::shared_ptr<WebSocketManager> createWebSocketManager() {
+    return std::make_shared<WebSocketManager>();
+}
+
+/**
+ * @brief TTS Service Bean Configuration
+ */
+std::shared_ptr<TTSService> createTTSService() {
+    return std::make_shared<TTSService>();
+}
+
+/**
+ * @brief Echo Service Bean Configuration
+ */
+std::shared_ptr<EchoService> createEchoService() {
+    return std::make_shared<EchoService>();
+}
+
+/**
+ * @brief Chat Service Bean Configuration
+ */
+std::shared_ptr<ChatService> createChatService(
+    std::shared_ptr<AgentLoopService> agent_loop_service,
+    std::shared_ptr<MemoryService> memory_service,
+    std::shared_ptr<Service> tool_service,
+    std::shared_ptr<TTSService> tts_service,
+    std::shared_ptr<EchoService> echo_service,
+    std::shared_ptr<WebSocketManager> websocket_manager
+) {
+    return std::make_shared<ChatService>(
+        *agent_loop_service,
+        *memory_service,
+        *tool_service,
+        *tts_service,
+        *echo_service,
+        *websocket_manager
+    );
+}
+
+// ============================================================================
+// Background Service Connector
+// ============================================================================
+
 void connect_services_async(
     std::shared_ptr<TTSService> tts_service,
     std::shared_ptr<EchoService> echo_service,
@@ -43,11 +122,9 @@ void connect_services_async(
     
     int retry_count = 0;
     while (true) {
-        // Only check for services if not already connected
         if (!tts_available || !echo_available) {
             auto services = tool_service->get_services_info();
             
-            // Try to connect to TTS provider
             if (!tts_available) {
                 for (const auto& service : services) {
                     if (service.id == "tts-provider") {
@@ -59,7 +136,6 @@ void connect_services_async(
                 }
             }
             
-            // Try to connect to Echo provider
             if (!echo_available) {
                 for (const auto& service : services) {
                     if (service.id == "echo") {
@@ -71,14 +147,12 @@ void connect_services_async(
                 }
             }
             
-            // Log progress
             if (retry_count % 15 == 0) {
                 std::cout << "[ServiceConnector] Status - Echo: " << (echo_available ? "connected" : "waiting")
                           << ", TTS: " << (tts_available ? "connected" : "waiting") << std::endl;
             }
         }
         
-        // Try to reconnect every 2 seconds if not connected, otherwise check less frequently
         if (!tts_available || !echo_available) {
             std::this_thread::sleep_for(std::chrono::seconds(2));
         } else {
@@ -88,166 +162,159 @@ void connect_services_async(
     }
 }
 
-int main() {
-    // Check for optional environment variables
-    bool gemini_available = (getenv("GEMINI_API_KEY") != nullptr);
-    if (!gemini_available) {
-        std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
-    }
+// ============================================================================
+// Main Application Entry Point
+// ============================================================================
+
+int main(int argc, char** argv) {
+    // Print Spring Boot-style banner
+    std::cout << R"(
+   __               __             
+  / /  ___ _______ / /  ___ _______
+ / _ \/ -_) __/ -_) _ \/ -_) __/ -_)
+/_//_/\__/_/  \__/_//_/\__/_/  \__/ 
+    )" << std::endl;
+    std::cout << "Lily Core - AI Assistant" << std::endl;
+    std::cout << "========================" << std::endl;
     
-    // Track service availability for health monitoring (atomic for thread safety)
+    // Create application using Spring Boot-like pattern
+    auto app = lily::LilyApplication::create(argc, argv);
+    auto& config = app->getConfig();
+    auto context = app->getContext();
+    
+    // Register beans in application context
+    context->registerBean("memoryService", createMemoryService());
+    context->registerBean("toolService", createToolService());
+    
+    // Get dependencies
+    auto memory_service = context->getBeanByName<MemoryService>("memoryService");
+    auto tool_service = context->getBeanByName<Service>("toolService");
+    
+    // Register with Consul
+    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
+    tool_service->register_all_services(config.http_port, config.websocket_port);
+    
+    // Create and register other beans
+    auto agent_loop_service = createAgentLoopService(memory_service, tool_service);
+    context->registerBean("agentLoopService", agent_loop_service);
+    
+    auto websocket_manager = createWebSocketManager();
+    context->registerBean("websocketManager", websocket_manager);
+    
+    auto tts_service = createTTSService();
+    context->registerBean("ttsService", tts_service);
+    
+    auto echo_service = createEchoService();
+    context->registerBean("echoService", echo_service);
+    
+    auto chat_service = createChatService(
+        agent_loop_service,
+        memory_service,
+        tool_service,
+        tts_service,
+        echo_service,
+        websocket_manager
+    );
+    context->registerBean("chatService", chat_service);
+    
+    // Track service availability
     std::atomic<bool> tts_available{false};
     std::atomic<bool> echo_available{false};
-
-    auto tts_service = std::make_shared<TTSService>();
-    auto echo_service = std::make_shared<EchoService>();
-    auto tool_service = std::make_shared<Service>();
     
-    // Register Lily-Core with Consul for both HTTP (8000) and WebSocket (9002) endpoints
-    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
-    tool_service->register_all_services(8000, 9002);
-    
-    // Start periodic discovery in background (discovers and updates service list)
-    tool_service->start_periodic_discovery();
-    
-    // Also start background service connector for Echo/TTS
+    // Start background service connector
     std::thread service_connector(connect_services_async, 
                                    tts_service, echo_service, tool_service,
                                    std::ref(tts_available), std::ref(echo_available));
     service_connector.detach();
     
-    // Start HTTP server immediately - don't wait for services
-    std::cout << "[Main] Starting HTTP server on port 8000..." << std::endl;
+    // Check for Gemini API
+    bool gemini_available = (getenv("GEMINI_API_KEY") != nullptr);
+    if (!gemini_available) {
+        std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
+    }
     
-    auto memory_service = std::make_shared<MemoryService>();
-    auto agent_loop_service = std::make_shared<AgentLoopService>(*memory_service, *tool_service.get());
-    auto websocket_manager = std::make_shared<WebSocketManager>();
-    auto chat_service = std::make_shared<ChatService>(
-        *agent_loop_service,
-        *memory_service,
-        *tool_service.get(),
-        *tts_service,
-        *echo_service,
-        *websocket_manager
+    // Start HTTP server
+    std::cout << "[Main] Starting HTTP server on port " << config.http_port << "..." << std::endl;
+    http_server_ptr = std::make_unique<HTTPServer>(
+        config.http_address, 
+        config.http_port, 
+        *chat_service, 
+        *memory_service, 
+        *tool_service.get(), 
+        *websocket_manager, 
+        *agent_loop_service
     );
-
-    http_server_ptr = std::make_unique<HTTPServer>("0.0.0.0", 8000, *chat_service, *memory_service, *tool_service.get(), *websocket_manager, *agent_loop_service);
     http_server_ptr->start();
-
-    std::cout << "[Main] Starting WebSocket server on port 9002..." << std::endl;
+    
+    // Start WebSocket server
+    std::cout << "[Main] Starting WebSocket server on port " << config.websocket_port << "..." << std::endl;
     websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
         chat_service->handle_audio_stream(data, user_id);
     });
     
-    websocket_manager->set_port(9002);
-    websocket_manager->set_ping_interval(30);  // Ping every 30 seconds
-    websocket_manager->set_pong_timeout(60);  // Timeout after 60 seconds
-
-    // Set message handler for Discord adapter messages
+    websocket_manager->set_port(config.websocket_port);
+    websocket_manager->set_ping_interval(config.ping_interval);
+    websocket_manager->set_pong_timeout(config.pong_timeout);
+    
+    // Set message handler for incoming chat messages
+    // NOTE: Lily-Core only handles simple chat messages.
+    // Discord-specific session management (wake-up, goodbye) is handled in Discord Adapter.
     websocket_manager->set_message_handler([chat_service, websocket_manager](const std::string& message) {
         try {
             nlohmann::json msg = nlohmann::json::parse(message);
-            std::string type = msg.value("type", "message");
             std::string user_id = msg.value("user_id", "unknown");
             std::string text = msg.value("text", "");
             
-            if (type == "message") {
-                // Regular chat message
-                std::string response = chat_service->handle_chat_message(text, user_id);
-                
-                // Send response back to client
-                nlohmann::json response_msg = {
-                    {"type", "response"},
-                    {"user_id", user_id},
-                    {"text", response}
-                };
-                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
-            } else if (type == "session_start") {
-                // Session start - generate greeting with LLM
-                std::string username = msg.value("username", "user");
-                std::string prompt = "The user " + username + " just said 'Hey Lily' to wake you up. Respond with a friendly greeting. Keep it brief and conversational. No markdown formatting.";
-                std::string response = chat_service->handle_chat_message(prompt, user_id);
-                
-                // Send response back to client
-                nlohmann::json response_msg = {
-                    {"type", "session_start"},
-                    {"user_id", user_id},
-                    {"text", response}
-                };
-                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
-            } else if (type == "session_end") {
-                // Session end - generate farewell with LLM
-                std::string username = msg.value("username", "user");
-                std::string prompt = "The user " + username + " said 'Goodbye Lily'. Respond with a friendly farewell. Keep it brief and conversational. No markdown formatting.";
-                std::string response = chat_service->handle_chat_message(prompt, user_id);
-                
-                // Send response back to client
-                nlohmann::json response_msg = {
-                    {"type", "session_end"},
-                    {"user_id", user_id},
-                    {"text", response}
-                };
-                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
-            } else if (type == "session_no_active") {
-                // User said goodbye but no active session
-                std::string prompt = "The user said 'Goodbye Lily' but there was no active conversation. Respond with a gentle message indicating we weren't chatting. Keep it brief and friendly. No markdown formatting.";
-                std::string response = chat_service->handle_chat_message(prompt, user_id);
-                
-                // Send response back to client
-                nlohmann::json response_msg = {
-                    {"type", "session_no_active"},
-                    {"user_id", user_id},
-                    {"text", response}
-                };
-                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
-            }
+            // Lily-Core's responsibility: Process the message through the LLM agent loop
+            std::string response = chat_service->handle_chat_message(text, user_id);
+            
+            // Send response back to the client
+            nlohmann::json response_msg = {
+                {"type", "response"},
+                {"user_id", user_id},
+                {"text", response}
+            };
+            websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+            
         } catch (const std::exception& e) {
             std::cerr << "Error processing WebSocket message: " << e.what() << std::endl;
         }
     });
-
-    // Set Echo message handler to process transcription results
+    
+    // Set Echo message handler
     websocket_manager->set_echo_message_handler([&chat_service, &websocket_manager](const nlohmann::json& message) {
         try {
             std::string message_type = message["type"];
             std::string text = message["text"];
-
+            
             if (message_type == "interim") {
                 std::cout << "Interim transcription: " << text << std::endl;
-                // Forward interim transcription to UI for live display
                 nlohmann::json ui_message = {
                     {"type", "interim"},
                     {"text", text}
                 };
-                std::string ui_message_str = ui_message.dump();
-                websocket_manager->broadcast("transcription:" + ui_message_str);
+                websocket_manager->broadcast("transcription:" + ui_message.dump());
             } else if (message_type == "final") {
                 std::cout << "Final transcription: " << text << std::endl;
-                // Forward final transcription to UI
                 nlohmann::json ui_message = {
                     {"type", "final"},
                     {"text", text}
                 };
-                std::string ui_message_str = ui_message.dump();
-                websocket_manager->broadcast("transcription:" + ui_message_str);
-
-                // Send final transcription to chat service (triggers agent loop)
+                websocket_manager->broadcast("transcription:" + ui_message.dump());
                 chat_service->handle_chat_message(text, "default_user");
             }
         } catch (const std::exception& e) {
             std::cerr << "Error processing Echo message: " << e.what() << std::endl;
         }
     });
-
+    
     // Connect to Echo service
     std::string echo_websocket_url;
     for (const auto& service : tool_service->get_services_info()) {
         if (service.id == "echo") {
-            // Use WebSocket URL if available, otherwise construct from HTTP URL
             if (!service.websocket_url.empty()) {
                 echo_websocket_url = service.websocket_url + "/ws/transcribe";
             } else {
-                // Convert HTTP URL to WebSocket URL
                 std::string http_url = service.http_url;
                 if (http_url.find("http://") == 0) {
                     echo_websocket_url = "ws://" + http_url.substr(7) + "/ws/transcribe";
@@ -259,7 +326,7 @@ int main() {
             break;
         }
     }
-
+    
     if (!echo_websocket_url.empty()) {
         if (!websocket_manager->connect_to_echo(echo_websocket_url)) {
             std::cerr << "Failed to connect to Echo service" << std::endl;
@@ -269,15 +336,15 @@ int main() {
     }
     
     websocket_manager->run();
-
+    
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-
+    
     std::cout << "[Main] Lily-Core is ready! (Gemini: " << (gemini_available ? "available" : "disabled")
               << ", Echo: connecting asynchronously, TTS: connecting asynchronously)" << std::endl;
-
-    // Keep the main thread alive to allow the server to run
+    
+    // Keep main thread alive
     std::promise<void>().get_future().wait();
-
+    
     return 0;
 }

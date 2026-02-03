@@ -34,6 +34,11 @@ set(SOURCES
     src/utils/SystemMetrics.cpp
 )
 
+# Header directories (for IDE support)
+file(GLOB_RECURSE HEADERS
+    "include/lily/**/*.hpp"
+)
+
 # Create executable
 add_executable(lily_core ${SOURCES})
 
