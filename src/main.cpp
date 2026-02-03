@@ -167,12 +167,16 @@ void connect_services_async(
 // ============================================================================
 
 int main(int argc, char** argv) {
-    // Print Spring Boot-style banner
+    // Print banner
     std::cout << R"(
-   __               __             
-  / /  ___ _______ / /  ___ _______
- / _ \/ -_) __/ -_) _ \/ -_) __/ -_)
-/_//_/\__/_/  \__/_//_/\__/_/  \__/ 
+  _      _ _       
+ | |    (_) |      
+ | |     _| |_   _ 
+ | |    | | | | | |
+ | |____| | | |_| |
+ |______|_|_|\__, |
+              __/ |
+             |___/ 
     )" << std::endl;
     std::cout << "Lily Core - AI Assistant" << std::endl;
     std::cout << "========================" << std::endl;
