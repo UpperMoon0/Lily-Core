@@ -53,18 +53,38 @@ namespace lily {
                 std::string health_check_url = "http://" + hostname_str + ":" + std::to_string(port) + "/health";
 
                 // Build registration payload
+                nlohmann::json check_config;
+                bool is_websocket = false;
+                for (const auto& tag : tags) {
+                    if (tag == "websocket") {
+                        is_websocket = true;
+                        break;
+                    }
+                }
+
+                if (is_websocket) {
+                    check_config = {
+                        {"TCP", hostname_str + ":" + std::to_string(port)},
+                        {"Interval", "10s"},
+                        {"Timeout", "2s"},
+                        {"DeregisterCriticalServiceAfter", "1m"}
+                    };
+                } else {
+                    check_config = {
+                        {"HTTP", health_check_url},
+                        {"Interval", "10s"},
+                        {"Timeout", "2s"},
+                        {"DeregisterCriticalServiceAfter", "1m"}
+                    };
+                }
+
                 nlohmann::json payload = {
                     {"ID", service_id},
                     {"Name", service_name},
                     {"Tags", tags},
                     {"Address", hostname_str},
                     {"Port", port},
-                    {"Check", {
-                        {"HTTP", health_check_url},
-                        {"Interval", "10s"},
-                        {"Timeout", "2s"},
-                        {"DeregisterCriticalServiceAfter", "1m"}
-                    }}
+                    {"Check", check_config}
                 };
 
                 std::string url = consul_host + "/v1/agent/service/register";
