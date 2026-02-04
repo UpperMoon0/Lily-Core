@@ -128,6 +128,17 @@ void HTTPServer::handle_get(http_request request) {
     response.headers().add("Access-Control-Allow-Headers", "Content-Type");
     
     auto path = request.relative_uri().path();
+    if (path == "/health") {
+        web::json::value response_json = web::json::value::object();
+        response_json["status"] = web::json::value::string("UP");
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
+        return;
+    }
+    
     if (path == "/monitoring") {
         try {
             lily::utils::SystemMetricsCollector metrics_collector;
