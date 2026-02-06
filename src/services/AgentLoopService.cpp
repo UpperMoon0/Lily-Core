@@ -121,7 +121,9 @@ namespace lily {
             step.timestamp = std::chrono::system_clock::now();
 
             // Build prompt for LLM with tool information
-            std::string prompt = "You are an AI assistant with access to tools. Analyze the user's request and decide whether to use a tool or provide a response directly.\n\n";
+            std::string system_prompt = _config.getGeminiSystemPrompt();
+            std::string prompt = "System Prompt: " + (system_prompt.empty() ? "You are an AI assistant with access to tools." : system_prompt) + "\n\n";
+            prompt += "Analyze the user's request and decide whether to use a tool or provide a response directly.\n\n";
             prompt += "Context:\n" + context + "\n\n";
             
             prompt += "Available tools:\n";
