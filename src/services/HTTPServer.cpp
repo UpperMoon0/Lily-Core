@@ -57,14 +57,23 @@ void HTTPServer::stop() {
         request.extract_json().then([this, request](pplx::task<json::value> task) {
             try {
                 const auto& json_value = task.get();
+                bool updated = false;
                 if (json_value.has_field("gemini_api_key")) {
                     _config.setGeminiApiKey(json_value.at("gemini_api_key").as_string());
+                    updated = true;
                 }
                 if (json_value.has_field("gemini_model")) {
                     _config.setGeminiModel(json_value.at("gemini_model").as_string());
+                    updated = true;
+                }
+                if (json_value.has_field("gemini_system_prompt")) {
+                    _config.setGeminiSystemPrompt(json_value.at("gemini_system_prompt").as_string());
+                    updated = true;
                 }
                 
-                _config.saveToFile();
+                if (updated) {
+                    _config.saveToFile();
+                }
                 
                 http_response response(status_codes::OK);
                 response.set_body("Configuration updated");
@@ -179,6 +188,7 @@ void HTTPServer::handle_get(http_request request) {
         }
         
         response_json["gemini_model"] = web::json::value::string(_config.getGeminiModel());
+        response_json["gemini_system_prompt"] = web::json::value::string(_config.getGeminiSystemPrompt());
         
         http_response response(status_codes::OK);
         response.set_body(response_json);

@@ -45,6 +45,7 @@ public:
     bool gemini_enabled = false;
     std::string gemini_api_key;
     std::string gemini_model = "gemini-2.5-flash";
+    std::string gemini_system_prompt = "You are Lily, a helpful AI assistant.";
     
     // Config persistence
     std::string config_file_path;
@@ -129,6 +130,16 @@ public:
     void setGeminiModel(const std::string& model) {
         std::lock_guard<std::mutex> lock(config_mutex.m);
         gemini_model = model;
+    }
+
+    std::string getGeminiSystemPrompt() const {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        return gemini_system_prompt;
+    }
+
+    void setGeminiSystemPrompt(const std::string& prompt) {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        gemini_system_prompt = prompt;
     }
     
     void setConfigFilePath(const std::string& path) {
@@ -232,6 +243,9 @@ public:
                 if (j.contains("gemini_model")) {
                     gemini_model = j["gemini_model"].get<std::string>();
                 }
+                if (j.contains("gemini_system_prompt")) {
+                    gemini_system_prompt = j["gemini_system_prompt"].get<std::string>();
+                }
                 std::cout << "Loaded configuration from " << config_file_path << std::endl;
             } catch (const std::exception& e) {
                 std::cerr << "Error parsing config file: " << e.what() << std::endl;
@@ -247,6 +261,7 @@ public:
             std::lock_guard<std::mutex> lock(config_mutex.m);
             j["gemini_api_key"] = gemini_api_key;
             j["gemini_model"] = gemini_model;
+            j["gemini_system_prompt"] = gemini_system_prompt;
         }
 
         std::ofstream file(config_file_path);
