@@ -4,6 +4,7 @@
 #include <lily/services/MemoryService.hpp>
 #include <lily/services/Service.hpp>
 #include <lily/models/AgentLoop.hpp>
+#include <lily/config/AppConfig.hpp>
 #include <string>
 #include <vector>
 #include <memory>
@@ -12,7 +13,7 @@ namespace lily {
     namespace services {
         class AgentLoopService {
         public:
-            AgentLoopService(MemoryService& memoryService, Service& toolService);
+            AgentLoopService(MemoryService& memoryService, Service& toolService, config::AppConfig& config);
             std::string run_loop(const std::string& user_message, const std::string& user_id);
             
             // New methods for agent loop tracking
@@ -23,6 +24,7 @@ namespace lily {
         private:
             MemoryService& _memoryService;
             Service& _toolService;
+            config::AppConfig& _config;
             
             // Agent loop tracking
             std::vector<lily::models::AgentLoop> _agentLoops;

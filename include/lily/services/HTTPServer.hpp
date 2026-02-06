@@ -5,6 +5,7 @@
 #include <cpprest/json.h>
 #include <functional>
 #include <memory>
+#include <lily/config/AppConfig.hpp>
 
 namespace lily {
 namespace services {
@@ -19,7 +20,7 @@ namespace services {
 
 class HTTPServer {
 public:
-    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service);
+    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service, config::AppConfig& config);
     ~HTTPServer();
 
     void start();
@@ -40,6 +41,7 @@ private:
     WebSocketManager& _ws_manager;
     AgentLoopService& _agent_loop_service;
     SessionService& _session_service; // Added reference
+    config::AppConfig& _config;
 };
 
 } // namespace services

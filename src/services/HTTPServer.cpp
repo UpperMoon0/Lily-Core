@@ -22,14 +22,15 @@ using namespace web::http::experimental::listener;
 namespace lily {
 namespace services {
 
-HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service)
+HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service, config::AppConfig& config)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
       _chat_service(chat_service),
       _memory_service(memory_service),
       _tool_service(tool_service),
       _ws_manager(ws_manager),
       _agent_loop_service(agent_loop_service),
-      _session_service(session_service) {
+      _session_service(session_service),
+      _config(config) {
     _listener.support(methods::POST, std::bind(&HTTPServer::handle_post, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_get, this, std::placeholders::_1));
     _listener.support(methods::DEL, std::bind(&HTTPServer::handle_delete, this, std::placeholders::_1));
@@ -50,8 +51,32 @@ void HTTPServer::stop() {
     std::cout << "HTTP server stopped." << std::endl;
 }
 
-void HTTPServer::handle_post(http_request request) {
+    void HTTPServer::handle_post(http_request request) {
     auto path = request.relative_uri().path();
+    if (path == "/config") {
+        request.extract_json().then([this, request](pplx::task<json::value> task) {
+            try {
+                const auto& json_value = task.get();
+                if (json_value.has_field("gemini_api_key")) {
+                    _config.setGeminiApiKey(json_value.at("gemini_api_key").as_string());
+                }
+                if (json_value.has_field("gemini_model")) {
+                    _config.setGeminiModel(json_value.at("gemini_model").as_string());
+                }
+                
+                _config.saveToFile();
+                
+                http_response response(status_codes::OK);
+                response.set_body("Configuration updated");
+                response.headers().add("Access-Control-Allow-Origin", "*");
+                request.reply(response);
+            } catch (const std::exception& e) {
+                request.reply(status_codes::InternalError, e.what());
+            }
+        });
+        return;
+    }
+    
     if (path == "/chat") {
         request.extract_json().then([this, request](pplx::task<json::value> task) {
             try {
@@ -141,6 +166,27 @@ void HTTPServer::handle_get(http_request request) {
         return;
     }
     
+    if (path == "/config") {
+        web::json::value response_json = web::json::value::object();
+        std::string api_key = _config.getGeminiApiKey();
+        
+        if (api_key.length() > 8) {
+            response_json["gemini_api_key"] = web::json::value::string("..." + api_key.substr(api_key.length() - 4));
+        } else if (!api_key.empty()) {
+            response_json["gemini_api_key"] = web::json::value::string("********");
+        } else {
+            response_json["gemini_api_key"] = web::json::value::string("");
+        }
+        
+        response_json["gemini_model"] = web::json::value::string(_config.getGeminiModel());
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
+        return;
+    }
+
     if (path == "/monitoring") {
         try {
             lily::utils::SystemMetricsCollector metrics_collector;

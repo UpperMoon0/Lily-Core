@@ -12,13 +12,13 @@
 
 namespace lily {
     namespace services {
-        AgentLoopService::AgentLoopService(MemoryService& memoryService, Service& toolService)
-            : _memoryService(memoryService), _toolService(toolService) {}
+        AgentLoopService::AgentLoopService(MemoryService& memoryService, Service& toolService, config::AppConfig& config)
+            : _memoryService(memoryService), _toolService(toolService), _config(config) {}
 
         std::string AgentLoopService::run_loop(const std::string& user_message, const std::string& user_id) {
-            const char* api_key = std::getenv("GEMINI_API_KEY");
-            if (!api_key) {
-                std::cerr << "GEMINI_API_KEY not set" << std::endl;
+            std::string api_key = _config.getGeminiApiKey();
+            if (api_key.empty()) {
+                std::cerr << "GEMINI_API_KEY not configured" << std::endl;
                 return "Error: GEMINI_API_KEY not configured";
             }
 
@@ -281,16 +281,21 @@ Your response must be in JSON format if using a tool, or start with FINAL_RESPON
         }
 
         nlohmann::json AgentLoopService::call_gemini_with_tools(const std::string& prompt, const std::vector<nlohmann::json>& tools) {
-            const char* api_key = std::getenv("GEMINI_API_KEY");
-            if (!api_key) {
-                std::cerr << "[GEMINI API] Error: GEMINI_API_KEY not set" << std::endl;
+            std::string api_key = _config.getGeminiApiKey();
+            if (api_key.empty()) {
+                std::cerr << "[GEMINI API] Error: GEMINI_API_KEY not configured" << std::endl;
                 return nlohmann::json::object();
+            }
+            
+            std::string model = _config.getGeminiModel();
+            if (model.empty()) {
+                model = "gemini-2.5-flash"; // Fallback
             }
 
             web::http::client::http_client client(U("https://generativelanguage.googleapis.com"));
             web::http::http_request request(web::http::methods::POST);
 
-            std::string url = "/v1beta/models/gemini-2.5-flash:generateContent?key=" + std::string(api_key);
+            std::string url = "/v1beta/models/" + model + ":generateContent?key=" + api_key;
             request.set_request_uri(web::uri(url));
 
             // Build request with tools

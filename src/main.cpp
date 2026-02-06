@@ -71,9 +71,10 @@ std::shared_ptr<lily::utils::ThreadPool> createThreadPool() {
  */
 std::shared_ptr<AgentLoopService> createAgentLoopService(
     std::shared_ptr<MemoryService> memory_service,
-    std::shared_ptr<Service> tool_service
+    std::shared_ptr<Service> tool_service,
+    lily::config::AppConfig& config
 ) {
-    return std::make_shared<AgentLoopService>(*memory_service, *tool_service);
+    return std::make_shared<AgentLoopService>(*memory_service, *tool_service, config);
 }
 
 /**
@@ -196,6 +197,10 @@ int main(int argc, char** argv) {
     auto& config = app->getConfig();
     auto context = app->getContext();
     
+    // Set config file path and load
+    config.setConfigFilePath("/app/data/config.json");
+    config.loadFromFile();
+
     // Register beans
     context->registerBean("memoryService", createMemoryService());
     context->registerBean("toolService", createToolService());
@@ -211,7 +216,7 @@ int main(int argc, char** argv) {
     tool_service->register_all_services(config.http_port, config.websocket_port);
     
     // Create and register other beans
-    auto agent_loop_service = createAgentLoopService(memory_service, tool_service);
+    auto agent_loop_service = createAgentLoopService(memory_service, tool_service, config);
     context->registerBean("agentLoopService", agent_loop_service);
     
     auto websocket_manager = createWebSocketManager();
@@ -249,7 +254,7 @@ int main(int argc, char** argv) {
     service_connector.detach();
     
     // Check for Gemini API
-    bool gemini_available = (getenv("GEMINI_API_KEY") != nullptr);
+    bool gemini_available = !config.getGeminiApiKey().empty();
     if (!gemini_available) {
         std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
     }
@@ -264,7 +269,8 @@ int main(int argc, char** argv) {
         *tool_service.get(), 
         *websocket_manager, 
         *agent_loop_service,
-        *session_service
+        *session_service,
+        config
     );
     http_server_ptr->start();
     
