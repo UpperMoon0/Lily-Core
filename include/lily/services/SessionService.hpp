@@ -32,6 +32,9 @@ public:
     void end_session(const std::string& user_id);
     void touch_session(const std::string& user_id);
     bool is_session_active(const std::string& user_id);
+
+    // Get all sessions
+    std::vector<SessionInfo> get_all_sessions();
     
     // Configuration
     void set_timeout_minutes(int minutes);

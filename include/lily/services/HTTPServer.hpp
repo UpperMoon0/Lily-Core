@@ -18,7 +18,7 @@ namespace services {
 
 class HTTPServer {
 public:
-    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service);
+    HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service);
     ~HTTPServer();
 
     void start();
@@ -32,12 +32,13 @@ private:
     void handle_monitoring(web::http::http_request request);
     void handle_websocket(web::http::http_request request);
 
-    web::http::experimental::listener::http_listener _listener;
+     web::http::experimental::listener::http_listener _listener;
     ChatService& _chat_service;
     MemoryService& _memory_service;
     Service& _tool_service;
     WebSocketManager& _ws_manager;
     AgentLoopService& _agent_loop_service;
+    SessionService& _session_service; // Added reference
 };
 
 } // namespace services

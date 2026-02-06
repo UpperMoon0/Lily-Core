@@ -21,13 +21,14 @@ using namespace web::http::experimental::listener;
 namespace lily {
 namespace services {
 
-HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service)
+HTTPServer::HTTPServer(const std::string& address, uint16_t port, ChatService& chat_service, MemoryService& memory_service, Service& tool_service, WebSocketManager& ws_manager, AgentLoopService& agent_loop_service, SessionService& session_service)
     : _listener(uri_builder().set_scheme("http").set_host(address).set_port(port).to_uri()),
       _chat_service(chat_service),
       _memory_service(memory_service),
       _tool_service(tool_service),
       _ws_manager(ws_manager),
-      _agent_loop_service(agent_loop_service) {
+      _agent_loop_service(agent_loop_service),
+      _session_service(session_service) {
     _listener.support(methods::POST, std::bind(&HTTPServer::handle_post, this, std::placeholders::_1));
     _listener.support(methods::GET, std::bind(&HTTPServer::handle_get, this, std::placeholders::_1));
     _listener.support(methods::DEL, std::bind(&HTTPServer::handle_delete, this, std::placeholders::_1));
@@ -302,6 +303,45 @@ void HTTPServer::handle_get(http_request request) {
             }
             response_json["steps"] = steps_json;
         }
+        
+        http_response response(status_codes::OK);
+        response.set_body(response_json);
+        response.headers().add("Access-Control-Allow-Origin", "*");
+        request.reply(response);
+    } else if (path == "/active-sessions") {
+        auto sessions = _session_service.get_all_sessions();
+        
+        web::json::value response_json = web::json::value::object();
+        web::json::value sessions_json = web::json::value::array(sessions.size());
+        
+        size_t idx = 0;
+        char buf[100];
+        
+        for (const auto& session : sessions) {
+            web::json::value session_json = web::json::value::object();
+            session_json["user_id"] = web::json::value::string(session.user_id);
+            session_json["active"] = web::json::value::boolean(session.active);
+            
+            auto start_time = std::chrono::system_clock::to_time_t(session.start_time);
+            if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&start_time))) {
+                session_json["start_time"] = web::json::value::string(std::string(buf));
+            }
+            
+            auto last_activity = std::chrono::system_clock::to_time_t(session.last_activity);
+            if (std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&last_activity))) {
+                session_json["last_activity"] = web::json::value::string(std::string(buf));
+            }
+            
+            // Calculate duration in minutes
+            auto now = std::chrono::system_clock::now();
+            auto duration_mins = std::chrono::duration_cast<std::chrono::minutes>(now - session.start_time).count();
+            session_json["duration_minutes"] = web::json::value::number(duration_mins);
+            
+            sessions_json[idx++] = session_json;
+        }
+        
+        response_json["sessions"] = sessions_json;
+        response_json["count"] = web::json::value::number(sessions.size());
         
         http_response response(status_codes::OK);
         response.set_body(response_json);

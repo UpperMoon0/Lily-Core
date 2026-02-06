@@ -54,6 +54,15 @@ bool SessionService::is_session_active(const std::string& user_id) {
     return it != _sessions.end() && it->second.active;
 }
 
+std::vector<SessionInfo> SessionService::get_all_sessions() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    std::vector<SessionInfo> sessions;
+    for (const auto& pair : _sessions) {
+        sessions.push_back(pair.second);
+    }
+    return sessions;
+}
+
 void SessionService::set_timeout_minutes(int minutes) {
     _timeout_minutes = minutes;
 }
