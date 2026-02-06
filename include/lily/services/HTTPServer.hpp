@@ -13,6 +13,7 @@ namespace services {
     class ChatService;  // Forward declaration
     class WebSocketManager; // Forward declaration
     class AgentLoopService; // Forward declaration
+    class SessionService;   // Forward declaration
 }
 namespace services {
 

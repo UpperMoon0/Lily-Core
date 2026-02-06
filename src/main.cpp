@@ -263,7 +263,8 @@ int main(int argc, char** argv) {
         *memory_service, 
         *tool_service.get(), 
         *websocket_manager, 
-        *agent_loop_service
+        *agent_loop_service,
+        *session_service
     );
     http_server_ptr->start();
     

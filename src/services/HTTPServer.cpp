@@ -1,4 +1,5 @@
 #include "lily/services/HTTPServer.hpp"
+#include "lily/services/SessionService.hpp"
 #include "lily/services/ChatService.hpp"
 #include "lily/services/Service.hpp"
 #include "lily/services/WebSocketManager.hpp"
