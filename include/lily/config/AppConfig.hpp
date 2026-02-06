@@ -20,7 +20,15 @@ namespace config {
  */
 class AppConfig {
 private:
-    mutable std::mutex config_mutex;
+    // Wrapper to make mutex "copyable" (by creating a new one)
+    struct CopyableMutex {
+        mutable std::mutex m;
+        CopyableMutex() = default;
+        CopyableMutex(const CopyableMutex&) {}
+        CopyableMutex& operator=(const CopyableMutex&) { return *this; }
+    };
+    
+    mutable CopyableMutex config_mutex;
 
 public:
     // Server configuration
@@ -93,7 +101,7 @@ public:
     }
     
     AppConfig& withGeminiApiKey(const std::string& api_key) {
-        std::lock_guard<std::mutex> lock(config_mutex);
+        std::lock_guard<std::mutex> lock(config_mutex.m);
         if (!api_key.empty()) {
             gemini_api_key = api_key;
             gemini_enabled = true;
@@ -103,26 +111,26 @@ public:
 
     // Thread-safe getters/setters for dynamic config
     std::string getGeminiApiKey() const {
-        std::lock_guard<std::mutex> lock(config_mutex);
+        std::lock_guard<std::mutex> lock(config_mutex.m);
         return gemini_api_key;
     }
 
     void setGeminiApiKey(const std::string& key) {
-        std::lock_guard<std::mutex> lock(config_mutex);
+        std::lock_guard<std::mutex> lock(config_mutex.m);
         gemini_api_key = key;
         gemini_enabled = !key.empty();
     }
 
     std::string getGeminiModel() const {
-        std::lock_guard<std::mutex> lock(config_mutex);
+        std::lock_guard<std::mutex> lock(config_mutex.m);
         return gemini_model;
     }
 
     void setGeminiModel(const std::string& model) {
-        std::lock_guard<std::mutex> lock(config_mutex);
+        std::lock_guard<std::mutex> lock(config_mutex.m);
         gemini_model = model;
     }
-
+    
     void setConfigFilePath(const std::string& path) {
         config_file_path = path;
     }
@@ -192,17 +200,8 @@ public:
         }
         
         // Load GEMINI_API_KEY from env only if not already set (e.g. from file)
-        // Or override? Usually env vars override file config in Spring Boot.
-        // But here we want persistence. If we have a file, we might want to respect it.
-        // But checking env allows easy override.
-        // Let's stick to env overrides if present, but we need to support saving.
-        // Actually, for this task, "These value and settings must be persited (and loaded from) to a json file".
-        // So file should probably take precedence if it exists, or maybe we load env first then file?
-        // If I load env first, then file overwrites env. That seems correct for "persistence".
-        // But if user sets env var, they might expect it to work.
-        // Let's say: load env first (defaults), then load file (persistence).
         if ((env_value = getenv("GEMINI_API_KEY")) != nullptr) {
-            std::lock_guard<std::mutex> lock(config_mutex);
+            std::lock_guard<std::mutex> lock(config_mutex.m);
             gemini_api_key = env_value;
             gemini_enabled = true;
         }
@@ -225,7 +224,7 @@ public:
                 nlohmann::json j;
                 file >> j;
                 
-                std::lock_guard<std::mutex> lock(config_mutex);
+                std::lock_guard<std::mutex> lock(config_mutex.m);
                 if (j.contains("gemini_api_key")) {
                     gemini_api_key = j["gemini_api_key"].get<std::string>();
                     gemini_enabled = !gemini_api_key.empty();
@@ -245,7 +244,7 @@ public:
 
         nlohmann::json j;
         {
-            std::lock_guard<std::mutex> lock(config_mutex);
+            std::lock_guard<std::mutex> lock(config_mutex.m);
             j["gemini_api_key"] = gemini_api_key;
             j["gemini_model"] = gemini_model;
         }
