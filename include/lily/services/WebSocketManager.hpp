@@ -12,6 +12,7 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace lily {
@@ -66,6 +67,7 @@ namespace lily {
             std::map<std::string, ConnectionHandle> _connections;
             std::map<ConnectionHandle, std::string, std::owner_less<ConnectionHandle>> _connection_to_user;
             std::map<ConnectionHandle, std::chrono::steady_clock::time_point, std::owner_less<ConnectionHandle>> _last_pong_time;
+            std::recursive_mutex _mutex;
             std::thread _thread;
             std::thread _ping_thread;
             std::atomic<bool> _running;

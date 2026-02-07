@@ -22,9 +22,23 @@ namespace lily {
             _echo_client.set_fail_handler([this](EchoConnectionHandle conn) {
                 this->on_echo_fail(conn);
             });
+
+            // Configure logging for Echo client
+            _echo_client.clear_error_channels(websocketpp::log::elevel::all);
+            _echo_client.set_error_channels(websocketpp::log::elevel::fatal);
+            _echo_client.set_error_channels(websocketpp::log::elevel::warn);
+            
+            _echo_client.set_access_channels(websocketpp::log::alevel::connect |
+                                          websocketpp::log::alevel::disconnect |
+                                          websocketpp::log::alevel::app);
+            _echo_client.clear_access_channels(websocketpp::log::alevel::frame_header | 
+                                            websocketpp::log::alevel::frame_payload);
             
             // Configure logging to suppress verbose frame header messages
-            _server.set_error_channels(websocketpp::log::elevel::all);
+            _server.clear_error_channels(websocketpp::log::elevel::all);
+            _server.set_error_channels(websocketpp::log::elevel::fatal);
+            _server.set_error_channels(websocketpp::log::elevel::warn);
+            
             _server.set_access_channels(websocketpp::log::alevel::connect |
                                   websocketpp::log::alevel::disconnect |
                                   websocketpp::log::alevel::app);
@@ -49,6 +63,7 @@ namespace lily {
             
             _server.set_pong_handler([this](ConnectionHandle conn, std::string payload) {
                 // Pong received, update last pong time
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
                 _last_pong_time[conn] = std::chrono::steady_clock::now();
             });
             
@@ -72,27 +87,38 @@ namespace lily {
             // We don't know the user_id yet, so we can't add it to the map here.
             // We'll handle it in the on_message function.
         }
-void WebSocketManager::disconnect(const ConnectionHandle& conn) {
-    auto it = _connection_to_user.find(conn);
-    if (it != _connection_to_user.end()) {
-        std::string user_id = it->second;
-        _connections.erase(user_id);
-        _connection_to_user.erase(it);
-    }
-    
-    // Remove pong time tracking for this connection
-    _last_pong_time.erase(conn);
+        void WebSocketManager::disconnect(const ConnectionHandle& conn) {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+            auto it = _connection_to_user.find(conn);
+            if (it != _connection_to_user.end()) {
+                std::string user_id = it->second;
+                _connections.erase(user_id);
+                _connection_to_user.erase(it);
+            }
+            
+            // Remove pong time tracking for this connection
+            _last_pong_time.erase(conn);
         }
 
         void WebSocketManager::broadcast(const std::string& message) {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
             for (const auto& pair : _connections) {
-                _server.send(pair.second, message, websocketpp::frame::opcode::text);
+                try {
+                    _server.send(pair.second, message, websocketpp::frame::opcode::text);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error broadcasting text message: " << e.what() << std::endl;
+                }
             }
         }
 
         void WebSocketManager::broadcast_binary(const std::vector<uint8_t>& data) {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
             for (const auto& pair : _connections) {
-                _server.send(pair.second, data.data(), data.size(), websocketpp::frame::opcode::binary);
+                try {
+                    _server.send(pair.second, data.data(), data.size(), websocketpp::frame::opcode::binary);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error broadcasting binary message: " << e.what() << std::endl;
+                }
             }
         }
 
@@ -106,10 +132,21 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         }
 
         void WebSocketManager::send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data) {
-            auto it = _connections.find(client_id);
-            if (it != _connections.end()) {
+            ConnectionHandle conn;
+            bool found = false;
+            
+            {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                auto it = _connections.find(client_id);
+                if (it != _connections.end()) {
+                    conn = it->second;
+                    found = true;
+                }
+            }
+
+            if (found) {
                 try {
-                    send_binary_to_client(it->second, data);
+                    send_binary_to_client(conn, data);
                 } catch (const std::exception& e) {
                     std::cerr << "Error sending binary data to client_id: " << client_id << ", error: " << e.what() << std::endl;
                 }
@@ -119,10 +156,21 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         }
         
         void WebSocketManager::send_text_to_client_by_id(const std::string& client_id, const std::string& message) {
-            auto it = _connections.find(client_id);
-            if (it != _connections.end()) {
+            ConnectionHandle conn;
+            bool found = false;
+            
+            {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                auto it = _connections.find(client_id);
+                if (it != _connections.end()) {
+                    conn = it->second;
+                    found = true;
+                }
+            }
+            
+            if (found) {
                 try {
-                    _server.send(it->second, message, websocketpp::frame::opcode::text);
+                    _server.send(conn, message, websocketpp::frame::opcode::text);
                 } catch (const std::exception& e) {
                     std::cerr << "Error sending text to client_id: " << client_id << ", error: " << e.what() << std::endl;
                 }
@@ -132,6 +180,7 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         }
         
         bool WebSocketManager::is_connection_registered(const std::string& client_id) {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
             // Check if the client_id is in the _connections map
             return _connections.find(client_id) != _connections.end();
         }
@@ -164,6 +213,7 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         }
         
         bool WebSocketManager::is_connection_alive(const ConnectionHandle& conn) {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
             // Check if the connection exists in our maps
             auto it = _connection_to_user.find(conn);
             if (it == _connection_to_user.end()) {
@@ -184,6 +234,7 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
         }
 
         std::vector<std::string> WebSocketManager::get_connected_user_ids() {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
             std::vector<std::string> user_ids;
             for (const auto& pair : _connections) {
                 user_ids.push_back(pair.first);
@@ -209,8 +260,11 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 // Check for a registration message
                 if (message.rfind("register:", 0) == 0) {
                     std::string user_id = message.substr(9);
-                    _connections[user_id] = conn;
-                    _connection_to_user[conn] = user_id;
+                    {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                        _connections[user_id] = conn;
+                        _connection_to_user[conn] = user_id;
+                    }
                     
                     // Send registration confirmation back to the client
                     try {
@@ -231,9 +285,12 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 
                 // Get user_id from connection mapping
                 std::string user_id;
-                auto it = _connection_to_user.find(conn);
-                if (it != _connection_to_user.end()) {
-                    user_id = it->second;
+                {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                    auto it = _connection_to_user.find(conn);
+                    if (it != _connection_to_user.end()) {
+                        user_id = it->second;
+                    }
                 }
                 
                 if (_binary_message_handler) {
@@ -275,8 +332,9 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                 auto now = std::chrono::steady_clock::now();
                 auto timeout_duration = std::chrono::seconds(_pong_timeout_seconds);
                 
-                for (const auto& pair : _connections) {
-                    const auto& conn = pair.second;
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                for (auto it = _connections.begin(); it != _connections.end();) {
+                    const auto& conn = it->second;
                     
                     // Check if we've received a pong recently
                     auto last_pong_it = _last_pong_time.find(conn);
@@ -290,7 +348,14 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                             } catch (const std::exception& e) {
                                 std::cerr << "Error closing connection: " << e.what() << std::endl;
                             }
-                            continue;
+                            
+                            // Remove from maps and advance iterator
+                            // Note: disconnect() handler will also be called, but we might want to clean up here too
+                            // or rely on the close handler.
+                            // If we rely on close handler, we just continue.
+                            // However, iterating while potentially modifying via callbacks (if on_close is synchronous) is dangerous.
+                            // websocketpp::close is async, so on_close will happen later.
+                            // So we just iterate.
                         }
                     }
                     
@@ -300,6 +365,8 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                     } catch (const std::exception& e) {
                         std::cerr << "Error sending ping to client: " << e.what() << std::endl;
                     }
+                    
+                    ++it;
                 }
             }
         }
@@ -446,10 +513,21 @@ void WebSocketManager::disconnect(const ConnectionHandle& conn) {
                     // Check if there's a client_id to forward the message to
                     if (message.contains("client_id")) {
                         std::string client_id = message["client_id"];
-                        auto it = _connections.find(client_id);
-                        if (it != _connections.end()) {
+                        ConnectionHandle conn;
+                        bool found = false;
+                        
+                        {
+                std::lock_guard<std::recursive_mutex> lock(_mutex);
+                            auto it = _connections.find(client_id);
+                            if (it != _connections.end()) {
+                                conn = it->second;
+                                found = true;
+                            }
+                        }
+
+                        if (found) {
                             // Forward the original payload to the client
-                            _server.send(it->second, payload, websocketpp::frame::opcode::text);
+                            _server.send(conn, payload, websocketpp::frame::opcode::text);
                         }
                     }
                     
