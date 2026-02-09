@@ -204,9 +204,13 @@ namespace lily {
                                       if (service_obj.has_field(U("Tags"))) {
                                           auto tags = service_obj[U("Tags")].as_array();
                                           for (const auto& tag : tags) {
-                                               if (utility::conversions::to_utf8string(tag.as_string()) == "mcp") {
+                                               std::string tag_str = utility::conversions::to_utf8string(tag.as_string());
+                                               if (tag_str == "mcp") {
                                                    info.mcp = true;
-                                                   break;
+                                               } else if (tag_str.find("url=") == 0) {
+                                                   info.http_url = tag_str.substr(4);
+                                               } else if (tag_str.find("ws_url=") == 0) {
+                                                   info.websocket_url = tag_str.substr(7);
                                                }
                                           }
                                       }

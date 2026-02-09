@@ -343,10 +343,8 @@ namespace lily {
             // Check the /ready endpoint of the TTS provider
             try {
                 web::uri provider_uri(utility::conversions::to_string_t(_provider_url));
-                web::uri_builder builder;
+                web::uri_builder builder(provider_uri);
                 builder.set_scheme(U("http"));
-                builder.set_host(provider_uri.host());
-                builder.set_port(8001); // HTTP readiness endpoint is on port 8001
                 builder.set_path(U("/ready"));
 
                 web::http::client::http_client client(builder.to_uri());
