@@ -39,6 +39,9 @@ namespace lily {
             // Getter for tools per server
             std::map<std::string, std::vector<nlohmann::json>> get_tools_per_server() const;
 
+            // Get URL for a service
+            std::string getServiceUrl(const std::string& service_name, const std::string& protocol) const;
+
             // Service registration methods
             bool register_service(const std::string& service_name, int port, const std::vector<std::string>& tags);
             void register_all_services(int http_port, int ws_port);

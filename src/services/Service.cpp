@@ -198,7 +198,7 @@ namespace lily {
                                       int port = service_obj[U("Port")].as_integer();
                                       
                                       info.http_url = "http://" + address + ":" + std::to_string(port);
-                                      info.websocket_url = ""; // Default, allow main.cpp to infer or use metadata later
+                                      info.websocket_url = "ws://" + address + ":" + std::to_string(port);
                                       
                                       info.mcp = false;
                                       if (service_obj.has_field(U("Tags"))) {
@@ -474,6 +474,26 @@ namespace lily {
 
         std::map<std::string, std::vector<nlohmann::json>> Service::get_tools_per_server() const {
             return _tools_per_server;
+        }
+
+        std::string Service::getServiceUrl(const std::string& service_name, const std::string& protocol) const {
+            for (const auto& service : _services) {
+                if (service.name == service_name || service.id == service_name) {
+                    if (protocol == "ws" || protocol == "websocket") {
+                        if (!service.websocket_url.empty()) {
+                            return service.websocket_url;
+                        }
+                        // Fallback derivation
+                        if (service.http_url.find("https://") == 0) {
+                            return "wss://" + service.http_url.substr(8);
+                        } else if (service.http_url.find("http://") == 0) {
+                            return "ws://" + service.http_url.substr(7);
+                        }
+                    }
+                    return service.http_url;
+                }
+            }
+            return "";
         }
     }
 }

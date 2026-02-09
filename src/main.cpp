@@ -159,26 +159,25 @@ void connect_services_async(
     int retry_count = 0;
     while (true) {
         if (!tts_available || !echo_available) {
-            auto services = tool_service->get_services_info();
-            
             if (!tts_available) {
-                for (const auto& service : services) {
-                    if (service.id == "tts-provider") {
-                        if (tts_service->connect(service.websocket_url.empty() ? service.http_url : service.websocket_url)) {
-                            tts_available = true;
-                            std::cout << "[ServiceConnector] Connected to TTS provider at " << service.http_url << std::endl;
-                        }
-                    }
+                // Try to get TTS URL (prefer WebSocket if available)
+                std::string tts_url = tool_service->getServiceUrl("tts-provider", "ws");
+                if (tts_url.empty()) tts_url = tool_service->getServiceUrl("tts-provider", "http");
+                
+                if (!tts_url.empty()) {
+                     if (tts_service->connect(tts_url)) {
+                         tts_available = true;
+                         std::cout << "[ServiceConnector] Connected to TTS provider at " << tts_url << std::endl;
+                     }
                 }
             }
             
             if (!echo_available) {
-                for (const auto& service : services) {
-                    if (service.id == "echo") {
-                        if (echo_service->connect(service.http_url)) {
-                            echo_available = true;
-                            std::cout << "[ServiceConnector] Connected to Echo provider at " << service.http_url << std::endl;
-                        }
+                std::string echo_url = tool_service->getServiceUrl("echo", "http");
+                if (!echo_url.empty()) {
+                    if (echo_service->connect(echo_url)) {
+                        echo_available = true;
+                        std::cout << "[ServiceConnector] Connected to Echo provider at " << echo_url << std::endl;
                     }
                 }
             }
@@ -374,22 +373,10 @@ int main(int argc, char** argv) {
         }
     });
     
-    std::string echo_websocket_url;
-    for (const auto& service : tool_service->get_services_info()) {
-        if (service.id == "echo") {
-            if (!service.websocket_url.empty()) {
-                echo_websocket_url = service.websocket_url + "/ws/transcribe";
-            } else {
-                std::string http_url = service.http_url;
-                if (http_url.find("http://") == 0) {
-                    echo_websocket_url = "ws://" + http_url.substr(7) + "/ws/transcribe";
-                } else if (http_url.find("https://") == 0) {
-                    echo_websocket_url = "wss://" + http_url.substr(8) + "/ws/transcribe";
-                }
-            }
-            std::cout << "Found Echo WebSocket endpoint at " << echo_websocket_url << std::endl;
-            break;
-        }
+    std::string echo_websocket_url = tool_service->getServiceUrl("echo", "ws");
+    if (!echo_websocket_url.empty()) {
+        echo_websocket_url += "/ws/transcribe";
+        std::cout << "Found Echo WebSocket endpoint at " << echo_websocket_url << std::endl;
     }
     
     if (!echo_websocket_url.empty()) {
