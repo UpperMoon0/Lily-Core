@@ -33,8 +33,9 @@ private:
 public:
     // Server configuration
     std::string http_address = "0.0.0.0";
-    uint16_t http_port = 8000;
-    uint16_t websocket_port = 9002;
+    uint16_t http_port = 8000; // Public port (Nginx)
+    uint16_t internal_http_port = 8001; // Internal C++ HTTP port
+    uint16_t internal_websocket_port = 9002; // Internal C++ WS port
     
     // Consul configuration
     std::string consul_host = "localhost";
@@ -80,9 +81,14 @@ public:
         http_port = port;
         return *this;
     }
+
+    AppConfig& withInternalHttpPort(uint16_t port) {
+        internal_http_port = port;
+        return *this;
+    }
     
-    AppConfig& withWebSocketPort(uint16_t port) {
-        websocket_port = port;
+    AppConfig& withInternalWebSocketPort(uint16_t port) {
+        internal_websocket_port = port;
         return *this;
     }
     
@@ -193,9 +199,16 @@ public:
         if ((env_value = getenv("LILY_HTTP_PORT")) != nullptr) {
             http_port = static_cast<uint16_t>(std::stoi(env_value));
         }
+
+        if ((env_value = getenv("LILY_INTERNAL_HTTP_PORT")) != nullptr) {
+            internal_http_port = static_cast<uint16_t>(std::stoi(env_value));
+        }
         
-        if ((env_value = getenv("LILY_WS_PORT")) != nullptr) {
-            websocket_port = static_cast<uint16_t>(std::stoi(env_value));
+        if ((env_value = getenv("LILY_INTERNAL_WS_PORT")) != nullptr) {
+            internal_websocket_port = static_cast<uint16_t>(std::stoi(env_value));
+        } else if ((env_value = getenv("LILY_WS_PORT")) != nullptr) {
+            // Backwards compatibility for WS port if used as internal
+            internal_websocket_port = static_cast<uint16_t>(std::stoi(env_value));
         }
         
         if ((env_value = getenv("CONSUL_HOST")) != nullptr) {

@@ -260,10 +260,10 @@ int main(int argc, char** argv) {
     }
     
     // Start HTTP server
-    std::cout << "[Main] Starting HTTP server on port " << config.http_port << "..." << std::endl;
+    std::cout << "[Main] Starting HTTP server on port " << config.internal_http_port << "..." << std::endl;
     http_server_ptr = std::make_unique<HTTPServer>(
         config.http_address, 
-        config.http_port, 
+        config.internal_http_port, 
         *chat_service, 
         *memory_service, 
         *tool_service.get(), 
@@ -275,12 +275,12 @@ int main(int argc, char** argv) {
     http_server_ptr->start();
     
     // Start WebSocket server
-    std::cout << "[Main] Starting WebSocket server on port " << config.websocket_port << "..." << std::endl;
+    std::cout << "[Main] Starting WebSocket server on port " << config.internal_websocket_port << "..." << std::endl;
     websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
         chat_service->handle_audio_stream(data, user_id);
     });
     
-    websocket_manager->set_port(config.websocket_port);
+    websocket_manager->set_port(config.internal_websocket_port);
     websocket_manager->set_ping_interval(config.ping_interval);
     websocket_manager->set_pong_timeout(config.pong_timeout);
     
