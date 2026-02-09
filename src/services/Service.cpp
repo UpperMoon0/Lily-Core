@@ -88,11 +88,21 @@ namespace lily {
         }
 
         void Service::register_all_services(int http_port, int ws_port) {
+            std::vector<std::string> http_tags = {"http", "api"};
+            std::vector<std::string> ws_tags = {"websocket", "ws"};
+            
+            // Add public URL tag if DOMAIN_NAME is set
+            if (const char* domain = std::getenv("DOMAIN_NAME")) {
+                std::string public_url = "https://lily-core." + std::string(domain);
+                http_tags.push_back("url=" + public_url);
+                ws_tags.push_back("url=" + public_url);
+            }
+
             // Register HTTP endpoint with "http" tag
-            bool http_registered = register_service("lily-core", http_port, {"http", "api"});
+            bool http_registered = register_service("lily-core", http_port, http_tags);
             
             // Register WebSocket endpoint with "websocket" tag
-            bool ws_registered = register_service("lily-core", ws_port, {"websocket", "ws"});
+            bool ws_registered = register_service("lily-core", ws_port, ws_tags);
             
             if (http_registered && ws_registered) {
                 std::cout << "[ServiceDiscovery] Lily-Core fully registered with Consul (HTTP: " << http_port << ", WS: " << ws_port << ")" << std::endl;
