@@ -53,8 +53,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libcpprest2.10 \
     libboost-system1.74.0 \
     libboost-thread1.74.0 \
-    libssl1.1 \
-    nginx
+    libssl1.1
 
 # Set the working directory
 WORKDIR /app
@@ -65,11 +64,8 @@ COPY --from=builder /app/build/lily_core .
 # Copy the include directory for Swagger JSON
 COPY --from=builder /app/include ./include
 
-# Copy Nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Expose the port the application runs on (Nginx)
+# Expose the port the application runs on
 EXPOSE 8000
 
-# Command to run Nginx and the executable
-CMD service nginx start && ./lily_core
+# Command to run the executable
+CMD ["./lily_core"]

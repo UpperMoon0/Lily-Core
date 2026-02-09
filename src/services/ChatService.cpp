@@ -12,7 +12,7 @@ namespace lily {
             Service& toolService,
             TTSService& ttsService,
             EchoService& echoService,
-            WebSocketManager& webSocketManager,
+            GatewayService& webSocketManager,
             SessionService& sessionService,
             utils::ThreadPool& threadPool
         ) : _agentLoopService(agentLoopService),

@@ -10,7 +10,7 @@
 #include <functional>
 #include <iostream>
 
-#include "lily/services/WebSocketManager.hpp"
+#include "lily/services/GatewayService.hpp"
 
 namespace lily {
 namespace services {
@@ -24,7 +24,7 @@ struct SessionInfo {
 
 class SessionService {
 public:
-    SessionService(WebSocketManager& ws_manager);
+    SessionService(GatewayService& ws_manager);
     ~SessionService();
 
     // Session lifecycle
@@ -43,7 +43,7 @@ private:
     void cleanup_loop();
     void broadcast_session_event(const std::string& type, const std::string& user_id);
 
-    WebSocketManager& _ws_manager;
+    GatewayService& _ws_manager;
     std::map<std::string, SessionInfo> _sessions;
     std::mutex _mutex;
     

@@ -4,7 +4,7 @@
 namespace lily {
 namespace services {
 
-SessionService::SessionService(WebSocketManager& ws_manager) 
+SessionService::SessionService(GatewayService& ws_manager) 
     : _ws_manager(ws_manager), _running(true) {
     _cleanup_thread = std::thread(&SessionService::cleanup_loop, this);
 }

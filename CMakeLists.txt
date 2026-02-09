@@ -30,8 +30,11 @@ set(SOURCES
     src/services/SessionService.cpp
     src/services/TTSService.cpp
     src/services/EchoService.cpp
-    src/services/HTTPServer.cpp
-    src/services/WebSocketManager.cpp
+    src/services/GatewayService.cpp
+    src/services/GatewayServiceHttp.cpp
+    src/controller/ChatController.cpp
+    src/controller/SystemController.cpp
+    src/controller/SessionController.cpp
     src/utils/SystemMetrics.cpp
 )
 

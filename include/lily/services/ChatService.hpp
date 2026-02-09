@@ -6,7 +6,7 @@
 #include <lily/services/Service.hpp>
 #include <lily/services/TTSService.hpp>
 #include <lily/services/EchoService.hpp>
-#include <lily/services/WebSocketManager.hpp>
+#include <lily/services/GatewayService.hpp>
 #include <lily/services/SessionService.hpp>
 #include <lily/utils/ThreadPool.hpp>
 #include <string>
@@ -33,7 +33,7 @@ namespace lily {
                 Service& toolService,
                 TTSService& ttsService,
                 EchoService& echoService,
-                WebSocketManager& webSocketManager,
+                GatewayService& webSocketManager,
                 SessionService& sessionService,
                 utils::ThreadPool& threadPool
             );
@@ -57,7 +57,7 @@ namespace lily {
             Service& _toolService;
             TTSService& _ttsService;
             EchoService& _echoService;
-            WebSocketManager& _webSocketManager;
+            GatewayService& _webSocketManager;
             SessionService& _sessionService;
             utils::ThreadPool& _threadPool;
         };

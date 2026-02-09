@@ -1,5 +1,5 @@
-#ifndef LILY_SERVICES_WEBSOCKETMANAGER_HPP
-#define LILY_SERVICES_WEBSOCKETMANAGER_HPP
+#ifndef LILY_SERVICES_GATEWAY_SERVICE_HPP
+#define LILY_SERVICES_GATEWAY_SERVICE_HPP
 
 #include <vector>
 #include <string>
@@ -15,6 +15,24 @@
 #include <mutex>
 #include <nlohmann/json.hpp>
 
+#include "lily/controller/ChatController.hpp"
+#include "lily/controller/SystemController.hpp"
+#include "lily/controller/SessionController.hpp"
+
+// Forward declarations
+namespace lily {
+    namespace config {
+        class AppConfig;
+    }
+    namespace services {
+        class ChatService;
+        class MemoryService; // No longer needed directly here?
+        class Service; // ToolService
+        class AgentLoopService; // No longer needed directly here?
+        class SessionService;
+    }
+}
+
 namespace lily {
         
     namespace services {
@@ -29,10 +47,10 @@ namespace lily {
         using EchoConnectionHandle = websocketpp::connection_hdl;
         using EchoMessageHandler = std::function<void(const nlohmann::json&)>;
 
-        class WebSocketManager {
+        class GatewayService {
         public:
-            WebSocketManager();
-            ~WebSocketManager();
+            GatewayService();
+            ~GatewayService();
             void on_message(const ConnectionHandle& conn, Server::message_ptr msg);
 
             void connect(const ConnectionHandle& conn);
@@ -60,8 +78,36 @@ namespace lily {
             void send_audio_to_echo(const std::vector<uint8_t>& audio_data);
             void set_echo_message_handler(const EchoMessageHandler& handler);
 
+            // Dependency injection for HTTP Controllers
+            void set_controllers(
+                std::shared_ptr<controller::ChatController> chat_controller,
+                std::shared_ptr<controller::SystemController> system_controller,
+                std::shared_ptr<controller::SessionController> session_controller
+            );
+
+            // Dependency injection for WebSocket handling (Legacy/Direct)
+            void set_dependencies(
+                std::shared_ptr<ChatService> chat_service,
+                std::shared_ptr<SessionService> session_service,
+                config::AppConfig& config
+            );
+
         private:
             Server _server;
+            
+            // Controllers
+            std::shared_ptr<controller::ChatController> _chat_controller;
+            std::shared_ptr<controller::SystemController> _system_controller;
+            std::shared_ptr<controller::SessionController> _session_controller;
+
+            // Dependencies for WebSocket
+            std::shared_ptr<ChatService> _chat_service;
+            std::shared_ptr<SessionService> _session_service;
+            config::AppConfig* _config = nullptr;
+
+            // HTTP Handler
+            void on_http(ConnectionHandle hdl);
+
             MessageHandler _message_handler;
             BinaryMessageHandler _binary_message_handler;
             std::map<std::string, ConnectionHandle> _connections;
@@ -92,4 +138,5 @@ namespace lily {
     }
 }
 
-#endif // LILY_SERVICES_WEBSOCKETMANAGER_HPP
+#endif // LILY_SERVICES_GATEWAY_SERVICE_HPP
+

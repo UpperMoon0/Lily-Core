@@ -9,9 +9,11 @@
 #include "lily/services/Service.hpp"
 #include "lily/services/TTSService.hpp"
 #include "lily/services/EchoService.hpp"
-#include "lily/services/WebSocketManager.hpp"
-#include "lily/services/HTTPServer.hpp"
+#include "lily/services/GatewayService.hpp"
 #include "lily/services/SessionService.hpp"
+#include "lily/controller/ChatController.hpp"
+#include "lily/controller/SystemController.hpp"
+#include "lily/controller/SessionController.hpp"
 #include "lily/utils/ThreadPool.hpp"
 #include <thread>
 #include <chrono>
@@ -25,16 +27,10 @@ using namespace web;
 using namespace web::http;
 using namespace web::http::client;
 
-// Global server pointer for signal handling
-std::unique_ptr<HTTPServer> http_server_ptr;
-
 // Define static member for ApplicationContextHolder
 std::shared_ptr<lily::core::ApplicationContext> lily::core::ApplicationContextHolder::context_ = nullptr;
 
 void signal_handler(int signal) {
-    if (http_server_ptr) {
-        http_server_ptr->stop();
-    }
     exit(signal);
 }
 
@@ -78,17 +74,17 @@ std::shared_ptr<AgentLoopService> createAgentLoopService(
 }
 
 /**
- * @brief WebSocket Manager Bean Configuration
+ * @brief Gateway Service Bean Configuration
  */
-std::shared_ptr<WebSocketManager> createWebSocketManager() {
-    return std::make_shared<WebSocketManager>();
+std::shared_ptr<GatewayService> createGatewayService() {
+    return std::make_shared<GatewayService>();
 }
 
 /**
  * @brief Session Service Bean Configuration
  */
-std::shared_ptr<SessionService> createSessionService(std::shared_ptr<WebSocketManager> websocket_manager) {
-    return std::make_shared<SessionService>(*websocket_manager);
+std::shared_ptr<SessionService> createSessionService(std::shared_ptr<GatewayService> gateway_service) {
+    return std::make_shared<SessionService>(*gateway_service);
 }
 
 /**
@@ -114,7 +110,7 @@ std::shared_ptr<ChatService> createChatService(
     std::shared_ptr<Service> tool_service,
     std::shared_ptr<TTSService> tts_service,
     std::shared_ptr<EchoService> echo_service,
-    std::shared_ptr<WebSocketManager> websocket_manager,
+    std::shared_ptr<GatewayService> gateway_service,
     std::shared_ptr<SessionService> session_service,
     std::shared_ptr<lily::utils::ThreadPool> thread_pool
 ) {
@@ -124,10 +120,31 @@ std::shared_ptr<ChatService> createChatService(
         *tool_service,
         *tts_service,
         *echo_service,
-        *websocket_manager,
+        *gateway_service,
         *session_service,
         *thread_pool
     );
+}
+
+// Controllers
+
+std::shared_ptr<lily::controller::SystemController> createSystemController(lily::config::AppConfig& config) {
+    return std::make_shared<lily::controller::SystemController>(config);
+}
+
+std::shared_ptr<lily::controller::SessionController> createSessionController(
+    std::shared_ptr<SessionService> sessionService,
+    std::shared_ptr<GatewayService> gatewayService
+) {
+    return std::make_shared<lily::controller::SessionController>(sessionService, gatewayService);
+}
+
+std::shared_ptr<lily::controller::ChatController> createChatController(
+    std::shared_ptr<ChatService> chatService,
+    std::shared_ptr<AgentLoopService> agentLoopService,
+    std::shared_ptr<MemoryService> memoryService
+) {
+    return std::make_shared<lily::controller::ChatController>(chatService, agentLoopService, memoryService);
 }
 
 // ... (Service connector omitted for brevity, logic unchanged) ...
@@ -138,7 +155,6 @@ void connect_services_async(
     std::atomic<bool>& tts_available,
     std::atomic<bool>& echo_available
 ) {
-    // ... (same as before) ...
     std::cout << "[ServiceConnector] Starting background service discovery..." << std::endl;
     int retry_count = 0;
     while (true) {
@@ -211,18 +227,14 @@ int main(int argc, char** argv) {
     auto tool_service = context->getBeanByName<Service>("toolService");
     auto thread_pool = context->getBeanByName<lily::utils::ThreadPool>("threadPool");
     
-    // Register with Consul
-    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
-    tool_service->register_all_services(config.http_port, config.websocket_port);
-    
     // Create and register other beans
     auto agent_loop_service = createAgentLoopService(memory_service, tool_service, config);
     context->registerBean("agentLoopService", agent_loop_service);
     
-    auto websocket_manager = createWebSocketManager();
-    context->registerBean("websocketManager", websocket_manager);
+    auto gateway_service = createGatewayService();
+    context->registerBean("gatewayService", gateway_service);
     
-    auto session_service = createSessionService(websocket_manager);
+    auto session_service = createSessionService(gateway_service);
     context->registerBean("sessionService", session_service);
     
     auto tts_service = createTTSService();
@@ -237,11 +249,29 @@ int main(int argc, char** argv) {
         tool_service,
         tts_service,
         echo_service,
-        websocket_manager,
+        gateway_service,
         session_service,
         thread_pool
     );
     context->registerBean("chatService", chat_service);
+
+    // Create Controllers
+    auto system_controller = createSystemController(config);
+    auto session_controller = createSessionController(session_service, gateway_service);
+    auto chat_controller = createChatController(chat_service, agent_loop_service, memory_service);
+
+    // Set dependencies for GatewayService
+    gateway_service->set_controllers(chat_controller, system_controller, session_controller);
+    gateway_service->set_dependencies(
+        chat_service,
+        session_service,
+        config
+    );
+
+    // Register with Consul
+    std::cout << "[Main] Registering Lily-Core with Consul..." << std::endl;
+    // We only register the single HTTP port (which handles both HTTP and WS upgrade)
+    tool_service->register_all_services(config.http_port, config.http_port);
     
     // Track service availability
     std::atomic<bool> tts_available{false};
@@ -259,33 +289,19 @@ int main(int argc, char** argv) {
         std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
     }
     
-    // Start HTTP server
-    std::cout << "[Main] Starting HTTP server on port " << config.internal_http_port << "..." << std::endl;
-    http_server_ptr = std::make_unique<HTTPServer>(
-        config.http_address, 
-        config.internal_http_port, 
-        *chat_service, 
-        *memory_service, 
-        *tool_service.get(), 
-        *websocket_manager, 
-        *agent_loop_service,
-        *session_service,
-        config
-    );
-    http_server_ptr->start();
+    // Start Unified Server (HTTP + WebSocket)
+    std::cout << "[Main] Starting Unified Server on port " << config.http_port << "..." << std::endl;
     
-    // Start WebSocket server
-    std::cout << "[Main] Starting WebSocket server on port " << config.internal_websocket_port << "..." << std::endl;
-    websocket_manager->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
+    gateway_service->set_binary_message_handler([chat_service](const std::vector<uint8_t>& data, const std::string& user_id) {
         chat_service->handle_audio_stream(data, user_id);
     });
     
-    websocket_manager->set_port(config.internal_websocket_port);
-    websocket_manager->set_ping_interval(config.ping_interval);
-    websocket_manager->set_pong_timeout(config.pong_timeout);
+    gateway_service->set_port(config.http_port);
+    gateway_service->set_ping_interval(config.ping_interval);
+    gateway_service->set_pong_timeout(config.pong_timeout);
     
     // Set message handler for incoming chat messages (ASYNC)
-    websocket_manager->set_message_handler([chat_service, websocket_manager, session_service](const std::string& message) {
+    gateway_service->set_message_handler([chat_service, gateway_service, session_service](const std::string& message) {
         try {
             nlohmann::json msg = nlohmann::json::parse(message);
             std::string type = msg.value("type", "message");
@@ -293,13 +309,13 @@ int main(int argc, char** argv) {
             std::string text = msg.value("text", "");
             
             // Define a callback that runs when the async LLM task is done
-            auto response_callback = [websocket_manager, user_id, type](std::string response) {
+            auto response_callback = [gateway_service, user_id, type](std::string response) {
                 nlohmann::json response_msg = {
                     {"type", (type == "session_start" || type == "session_end" || type == "session_no_active") ? type : "response"},
                     {"user_id", user_id},
                     {"text", response}
                 };
-                websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+                gateway_service->send_text_to_client_by_id(user_id, response_msg.dump());
             };
 
             if (type == "session_start") {
@@ -308,17 +324,13 @@ int main(int argc, char** argv) {
                 chat_service->handle_chat_message_async(text, user_id, response_callback);
 
             } else if (type == "session_end") {
-                // Call Async, then end session in callback?
-                // Actually, end_session is metadata update, can be done immediately or after.
-                // Better to do it after response.
-                
-                auto end_session_callback = [websocket_manager, user_id, type, session_service](std::string response) {
+                auto end_session_callback = [gateway_service, user_id, type, session_service](std::string response) {
                     nlohmann::json response_msg = {
                         {"type", "session_end"},
                         {"user_id", user_id},
                         {"text", response}
                     };
-                    websocket_manager->send_text_to_client_by_id(user_id, response_msg.dump());
+                    gateway_service->send_text_to_client_by_id(user_id, response_msg.dump());
                     session_service->end_session(user_id);
                 };
                 chat_service->handle_chat_message_async(text, user_id, end_session_callback);
@@ -334,8 +346,7 @@ int main(int argc, char** argv) {
     });
     
     // Set Echo message handler
-    // ... (same as before) ...
-    websocket_manager->set_echo_message_handler([&chat_service, &websocket_manager](const nlohmann::json& message) {
+    gateway_service->set_echo_message_handler([&chat_service, &gateway_service](const nlohmann::json& message) {
         try {
             std::string message_type = message["type"];
             std::string text = message["text"];
@@ -346,40 +357,23 @@ int main(int argc, char** argv) {
                     {"type", "interim"},
                     {"text", text}
                 };
-                websocket_manager->broadcast("transcription:" + ui_message.dump());
+                gateway_service->broadcast("transcription:" + ui_message.dump());
             } else if (message_type == "final") {
                 std::cout << "Final transcription: " << text << std::endl;
                 nlohmann::json ui_message = {
                     {"type", "final"},
                     {"text", text}
                 };
-                websocket_manager->broadcast("transcription:" + ui_message.dump());
+                gateway_service->broadcast("transcription:" + ui_message.dump());
                 
                 // ASYNC handling for voice command
                 chat_service->handle_chat_message_async(text, "default_user", nullptr); 
-                // Note: nullptr callback because ChatService::handle_chat_message_async doesn't send response if callback null?
-                // Wait, I need to check ChatService implementation.
-                // In ChatService.cpp: if (callback) callback(agent_response);
-                // If I pass null, it won't send the response text back via WebSocketManager explicitly here.
-                // BUT ChatService::handle_chat_message_with_audio synthesizes TTS. 
-                // If I want the TEXT response to go back to UI, I need a callback.
-                
-                // Let's fix the voice handler callback
-                /*
-                auto voice_callback = [websocket_manager](std::string response) {
-                     // Maybe broadcast the text response to UI?
-                     // The UI expects "response" type?
-                     // Currently UI uses HTTP for chat but WebSocket for transcription.
-                     // If voice triggers chat, the response should probably go via WebSocket.
-                };
-                */
             }
         } catch (const std::exception& e) {
             std::cerr << "Error processing Echo message: " << e.what() << std::endl;
         }
     });
     
-    // ... (Connection logic same as before) ...
     std::string echo_websocket_url;
     for (const auto& service : tool_service->get_services_info()) {
         if (service.id == "echo") {
@@ -399,14 +393,14 @@ int main(int argc, char** argv) {
     }
     
     if (!echo_websocket_url.empty()) {
-        if (!websocket_manager->connect_to_echo(echo_websocket_url)) {
+        if (!gateway_service->connect_to_echo(echo_websocket_url)) {
             std::cerr << "Failed to connect to Echo service" << std::endl;
         }
     } else {
         std::cerr << "Echo service not found. Audio transcription will not work." << std::endl;
     }
     
-    websocket_manager->run();
+    gateway_service->run();
     
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);

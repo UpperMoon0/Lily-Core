@@ -1,11 +1,19 @@
-#include "lily/services/WebSocketManager.hpp"
+#include "lily/services/GatewayService.hpp"
+#include "lily/services/ChatService.hpp"
+#include "lily/services/MemoryService.hpp"
+#include "lily/services/Service.hpp"
+#include "lily/services/AgentLoopService.hpp"
+#include "lily/services/SessionService.hpp"
+#include "lily/config/AppConfig.hpp"
+#include "lily/utils/SystemMetrics.hpp"
 #include <iostream>
 #include <algorithm>
+#include <ctime>
 
 namespace lily {
     namespace services {
 
-        WebSocketManager::WebSocketManager() : _running(false), _ping_interval_seconds(30), _pong_timeout_seconds(60), _echo_connected(false) {
+        GatewayService::GatewayService() : _running(false), _ping_interval_seconds(30), _pong_timeout_seconds(60), _echo_connected(false) {
             _server.init_asio();
 
             // Initialize Echo client
@@ -76,18 +84,42 @@ namespace lily {
                     std::cerr << "Error closing connection on pong timeout: " << e.what() << std::endl;
                 }
             });
+
+            _server.set_http_handler([this](ConnectionHandle conn) {
+                this->on_http(conn);
+            });
         }
 
-        WebSocketManager::~WebSocketManager() {
+        void GatewayService::set_controllers(
+            std::shared_ptr<controller::ChatController> chat_controller,
+            std::shared_ptr<controller::SystemController> system_controller,
+            std::shared_ptr<controller::SessionController> session_controller
+        ) {
+            _chat_controller = chat_controller;
+            _system_controller = system_controller;
+            _session_controller = session_controller;
+        }
+
+        void GatewayService::set_dependencies(
+            std::shared_ptr<ChatService> chat_service,
+            std::shared_ptr<SessionService> session_service,
+            config::AppConfig& config
+        ) {
+            _chat_service = chat_service;
+            _session_service = session_service;
+            _config = &config;
+        }
+
+        GatewayService::~GatewayService() {
             stop();
             disconnect_from_echo();
         }
 
-        void WebSocketManager::connect(const ConnectionHandle& conn) {
+        void GatewayService::connect(const ConnectionHandle& conn) {
             // We don't know the user_id yet, so we can't add it to the map here.
             // We'll handle it in the on_message function.
         }
-        void WebSocketManager::disconnect(const ConnectionHandle& conn) {
+        void GatewayService::disconnect(const ConnectionHandle& conn) {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             auto it = _connection_to_user.find(conn);
             if (it != _connection_to_user.end()) {
@@ -100,7 +132,7 @@ namespace lily {
             _last_pong_time.erase(conn);
         }
 
-        void WebSocketManager::broadcast(const std::string& message) {
+        void GatewayService::broadcast(const std::string& message) {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             for (const auto& pair : _connections) {
                 try {
@@ -111,7 +143,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::broadcast_binary(const std::vector<uint8_t>& data) {
+        void GatewayService::broadcast_binary(const std::vector<uint8_t>& data) {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             for (const auto& pair : _connections) {
                 try {
@@ -122,7 +154,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data) {
+        void GatewayService::send_binary_to_client(const ConnectionHandle& conn, const std::vector<uint8_t>& data) {
             try {
                 _server.send(conn, data.data(), data.size(), websocketpp::frame::opcode::binary);
             } catch (const std::exception& e) {
@@ -131,7 +163,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data) {
+        void GatewayService::send_binary_to_client_by_id(const std::string& client_id, const std::vector<uint8_t>& data) {
             ConnectionHandle conn;
             bool found = false;
             
@@ -155,7 +187,7 @@ namespace lily {
             }
         }
         
-        void WebSocketManager::send_text_to_client_by_id(const std::string& client_id, const std::string& message) {
+        void GatewayService::send_text_to_client_by_id(const std::string& client_id, const std::string& message) {
             ConnectionHandle conn;
             bool found = false;
             
@@ -179,13 +211,13 @@ namespace lily {
             }
         }
         
-        bool WebSocketManager::is_connection_registered(const std::string& client_id) {
+        bool GatewayService::is_connection_registered(const std::string& client_id) {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             // Check if the client_id is in the _connections map
             return _connections.find(client_id) != _connections.end();
         }
         
-        bool WebSocketManager::wait_for_connection_registration(const std::string& client_id, int timeout_seconds) {
+        bool GatewayService::wait_for_connection_registration(const std::string& client_id, int timeout_seconds) {
             // Check if already registered
             if (is_connection_registered(client_id)) {
                 return true;
@@ -212,7 +244,7 @@ namespace lily {
             return false;
         }
         
-        bool WebSocketManager::is_connection_alive(const ConnectionHandle& conn) {
+        bool GatewayService::is_connection_alive(const ConnectionHandle& conn) {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             // Check if the connection exists in our maps
             auto it = _connection_to_user.find(conn);
@@ -233,7 +265,7 @@ namespace lily {
             }
         }
 
-        std::vector<std::string> WebSocketManager::get_connected_user_ids() {
+        std::vector<std::string> GatewayService::get_connected_user_ids() {
                 std::lock_guard<std::recursive_mutex> lock(_mutex);
             std::vector<std::string> user_ids;
             for (const auto& pair : _connections) {
@@ -242,7 +274,7 @@ namespace lily {
             return user_ids;
         }
 
-        void WebSocketManager::on_message(const ConnectionHandle& conn, Server::message_ptr msg) {
+        void GatewayService::on_message(const ConnectionHandle& conn, Server::message_ptr msg) {
             // Handle text messages
             if (msg->get_opcode() == websocketpp::frame::opcode::text) {
                 std::string message = msg->get_payload();
@@ -299,27 +331,27 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::set_message_handler(const MessageHandler& handler) {
+        void GatewayService::set_message_handler(const MessageHandler& handler) {
             _message_handler = handler;
         }
 
-        void WebSocketManager::set_binary_message_handler(const BinaryMessageHandler& handler) {
+        void GatewayService::set_binary_message_handler(const BinaryMessageHandler& handler) {
             _binary_message_handler = handler;
         }
 
-        void WebSocketManager::set_port(uint16_t port) {
+        void GatewayService::set_port(uint16_t port) {
             _port = port;
         }
         
-        void WebSocketManager::set_ping_interval(int seconds) {
+        void GatewayService::set_ping_interval(int seconds) {
             _ping_interval_seconds = seconds;
         }
         
-        void WebSocketManager::set_pong_timeout(int seconds) {
+        void GatewayService::set_pong_timeout(int seconds) {
             _pong_timeout_seconds = seconds;
         }
         
-        void WebSocketManager::ping_clients() {
+        void GatewayService::ping_clients() {
             while (_running) {
                 // Sleep for the ping interval
                 std::this_thread::sleep_for(std::chrono::seconds(_ping_interval_seconds));
@@ -371,7 +403,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::run() {
+        void GatewayService::run() {
             try {
                 _server.listen(_port);
                 _server.start_accept();
@@ -398,11 +430,11 @@ namespace lily {
                     }
                 });
             } catch (const std::exception& e) {
-                std::cerr << "Error in WebSocketManager: " << e.what() << std::endl;
+                std::cerr << "Error in GatewayService: " << e.what() << std::endl;
             }
         }
 
-        void WebSocketManager::stop() {
+        void GatewayService::stop() {
             try {
                 _running = false;
 
@@ -428,12 +460,12 @@ namespace lily {
                     _thread.join();
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Error in WebSocketManager::stop(): " << e.what() << std::endl;
+                std::cerr << "Error in GatewayService::stop(): " << e.what() << std::endl;
             }
         }
 
         // Echo client methods
-        bool WebSocketManager::connect_to_echo(const std::string& echo_ws_url) {
+        bool GatewayService::connect_to_echo(const std::string& echo_ws_url) {
             try {
                 websocketpp::lib::error_code ec;
                 EchoClient::connection_ptr con = _echo_client.get_connection(echo_ws_url, ec);
@@ -462,7 +494,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::disconnect_from_echo() {
+        void GatewayService::disconnect_from_echo() {
             try {
                 if (_echo_connected) {
                     _echo_client.close(_echo_connection, websocketpp::close::status::normal, "Client disconnecting");
@@ -476,7 +508,7 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::send_audio_to_echo(const std::vector<uint8_t>& audio_data) {
+        void GatewayService::send_audio_to_echo(const std::vector<uint8_t>& audio_data) {
             if (!_echo_connected) {
                 std::cerr << "Not connected to Echo service" << std::endl;
                 return;
@@ -490,21 +522,21 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::set_echo_message_handler(const EchoMessageHandler& handler) {
+        void GatewayService::set_echo_message_handler(const EchoMessageHandler& handler) {
             _echo_message_handler = handler;
         }
 
-        void WebSocketManager::on_echo_open(EchoConnectionHandle conn) {
+        void GatewayService::on_echo_open(EchoConnectionHandle conn) {
             std::cout << "Connected to Echo service" << std::endl;
             _echo_connected = true;
         }
 
-        void WebSocketManager::on_echo_close(EchoConnectionHandle conn) {
+        void GatewayService::on_echo_close(EchoConnectionHandle conn) {
             std::cout << "Disconnected from Echo service" << std::endl;
             _echo_connected = false;
         }
 
-        void WebSocketManager::on_echo_message(EchoConnectionHandle conn, EchoClient::message_ptr msg) {
+        void GatewayService::on_echo_message(EchoConnectionHandle conn, EchoClient::message_ptr msg) {
             if (msg->get_opcode() == websocketpp::frame::opcode::text) {
                 std::string payload = msg->get_payload();
                 try {
@@ -540,9 +572,10 @@ namespace lily {
             }
         }
 
-        void WebSocketManager::on_echo_fail(EchoConnectionHandle conn) {
+        void GatewayService::on_echo_fail(EchoConnectionHandle conn) {
             std::cerr << "Echo connection failed" << std::endl;
             _echo_connected = false;
         }
+
     }
 }
