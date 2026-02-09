@@ -112,8 +112,8 @@ namespace lily {
             
             // Add public URL tag if DOMAIN_NAME is set
             if (const char* domain = std::getenv("DOMAIN_NAME")) {
-                std::string public_url = "https://lily-core." + std::string(domain);
-                tags.push_back("url=" + public_url);
+                std::string hostname = "lily-core." + std::string(domain);
+                tags.push_back("hostname=" + hostname);
             }
 
             // Register combined service on http_port (which is now the single entry point)
@@ -207,10 +207,10 @@ namespace lily {
                                                std::string tag_str = utility::conversions::to_utf8string(tag.as_string());
                                                if (tag_str == "mcp") {
                                                    info.mcp = true;
-                                               } else if (tag_str.find("url=") == 0) {
-                                                   info.http_url = tag_str.substr(4);
-                                               } else if (tag_str.find("ws_url=") == 0) {
-                                                   info.websocket_url = tag_str.substr(7);
+                                               } else if (tag_str.find("hostname=") == 0) {
+                                                   std::string hostname = tag_str.substr(9);
+                                                   info.http_url = "https://" + hostname + "/api";
+                                                   info.websocket_url = "wss://" + hostname + "/ws";
                                                }
                                           }
                                       }
