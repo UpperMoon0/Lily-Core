@@ -7,9 +7,12 @@
 #include <lily/services/TTSService.hpp>
 #include <lily/services/EchoService.hpp>
 #include <lily/services/WebSocketManager.hpp>
+#include <lily/services/SessionService.hpp>
+#include <lily/utils/ThreadPool.hpp>
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 namespace lily {
     namespace services {
@@ -30,11 +33,22 @@ namespace lily {
                 Service& toolService,
                 TTSService& ttsService,
                 EchoService& echoService,
-                WebSocketManager& webSocketManager
+                WebSocketManager& webSocketManager,
+                SessionService& sessionService,
+                utils::ThreadPool& threadPool
             );
 
+            // Synchronous (Blocking) - Deprecated for high load
             std::string handle_chat_message(const std::string& message, const std::string& user_id);
             ChatResponse handle_chat_message_with_audio(const std::string& message, const std::string& user_id, const ChatParameters& params);
+            
+            // Asynchronous (Non-Blocking)
+            using CompletionCallback = std::function<void(std::string)>;
+            void handle_chat_message_async(const std::string& message, const std::string& user_id, CompletionCallback callback);
+
+            using AudioCompletionCallback = std::function<void(ChatResponse)>;
+            void handle_chat_message_with_audio_async(const std::string& message, const std::string& user_id, const ChatParameters& params, AudioCompletionCallback callback);
+
             void handle_audio_stream(const std::vector<uint8_t>& audio_data, const std::string& user_id);
 
         private:
@@ -44,6 +58,8 @@ namespace lily {
             TTSService& _ttsService;
             EchoService& _echoService;
             WebSocketManager& _webSocketManager;
+            SessionService& _sessionService;
+            utils::ThreadPool& _threadPool;
         };
     }
 }

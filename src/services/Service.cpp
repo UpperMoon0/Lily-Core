@@ -53,18 +53,38 @@ namespace lily {
                 std::string health_check_url = "http://" + hostname_str + ":" + std::to_string(port) + "/health";
 
                 // Build registration payload
+                nlohmann::json check_config;
+                bool is_websocket = false;
+                for (const auto& tag : tags) {
+                    if (tag == "websocket") {
+                        is_websocket = true;
+                        break;
+                    }
+                }
+
+                if (is_websocket) {
+                    check_config = {
+                        {"TCP", hostname_str + ":" + std::to_string(port)},
+                        {"Interval", "10s"},
+                        {"Timeout", "2s"},
+                        {"DeregisterCriticalServiceAfter", "1m"}
+                    };
+                } else {
+                    check_config = {
+                        {"HTTP", health_check_url},
+                        {"Interval", "10s"},
+                        {"Timeout", "2s"},
+                        {"DeregisterCriticalServiceAfter", "1m"}
+                    };
+                }
+
                 nlohmann::json payload = {
                     {"ID", service_id},
                     {"Name", service_name},
                     {"Tags", tags},
                     {"Address", hostname_str},
                     {"Port", port},
-                    {"Check", {
-                        {"HTTP", health_check_url},
-                        {"Interval", "10s"},
-                        {"Timeout", "2s"},
-                        {"DeregisterCriticalServiceAfter", "1m"}
-                    }}
+                    {"Check", check_config}
                 };
 
                 std::string url = consul_host + "/v1/agent/service/register";
@@ -295,28 +315,54 @@ namespace lily {
         }
 
         nlohmann::json Service::execute_tool(const std::string& tool_name, const nlohmann::json& parameters) {
+            std::vector<std::string> error_details;
+            
             // Try to find the tool in our discovered tools
             for (const auto& server_url : _discovered_servers) {
                 try {
                     auto result = execute_tool_on_server(server_url, tool_name, parameters);
                     if (result.value("status", "") == "success" || result.contains("result") || result.contains("content")) {
                         return result;
+                    } else {
+                        // Capture error details from the result
+                        std::string error_msg = "Server: " + server_url + " - ";
+                        if (result.contains("message")) {
+                            error_msg += "Message: " + result["message"].get<std::string>();
+                        } else {
+                            error_msg += "Unknown error";
+                        }
+                        error_details.push_back(error_msg);
                     }
                 } catch (const std::exception& e) {
+                    std::string error_msg = "Server: " + server_url + " - Exception: " + std::string(e.what());
                     std::cerr << "Failed to execute tool " << tool_name << " on " << server_url << ": " << e.what() << std::endl;
+                    error_details.push_back(error_msg);
                 }
+            }
+
+            // Build detailed error message
+            std::string detailed_message = "Tool not found or failed to execute. Details: ";
+            if (!error_details.empty()) {
+                for (size_t i = 0; i < error_details.size(); i++) {
+                    detailed_message += "\n" + std::to_string(i + 1) + ". " + error_details[i];
+                }
+            } else {
+                detailed_message += "No servers available or discovered.";
             }
 
             return {
                 {"status", "error"},
-                {"message", "Tool not found or failed to execute."}
+                {"message", detailed_message},
+                {"error_details", error_details}
             };
         }
 
         nlohmann::json Service::execute_tool_on_server(const std::string& server_url, const std::string& tool_name, const nlohmann::json& parameters) {
             try {
-                // Create HTTP client
-                http_client client(U(server_url));
+                // Create HTTP client with timeout configuration
+                http_client_config config;
+                config.set_timeout(std::chrono::seconds(30));
+                http_client client(U(server_url), config);
 
                 // Prepare MCP tools/call request
                 json::value request;
@@ -334,26 +380,84 @@ namespace lily {
 
                 request[U("params")] = params;
 
-                // Send request
-                auto response = client.request(methods::POST, U("/v1/mcp"), request).get();
+                // Send request with detailed logging
+                std::cout << "[HTTP CLIENT] Sending request to " << server_url << "/mcp" << std::endl;
+                auto response = client.request(methods::POST, U("/mcp"), request).get();
+                std::cout << "[HTTP CLIENT] Received response with status: " << response.status_code() << std::endl;
 
                 if (response.status_code() == status_codes::OK) {
-                    auto response_json = response.extract_json().get();
+                    try {
+                        auto response_json = response.extract_json().get();
+                        std::cout << "[HTTP CLIENT] Successfully extracted JSON response" << std::endl;
 
-                    // Convert cpprest JSON to nlohmann JSON
-                    std::string response_str = utility::conversions::to_utf8string(response_json.serialize());
-                    return nlohmann::json::parse(response_str);
+                        // Convert cpprest JSON to nlohmann JSON
+                        std::string response_str = utility::conversions::to_utf8string(response_json.serialize());
+                        return nlohmann::json::parse(response_str);
+                    } catch (const std::exception& e) {
+                        std::cerr << "[HTTP CLIENT] Error extracting JSON from response: " << e.what() << std::endl;
+                        // Try to get the raw response body for debugging
+                        std::string raw_response;
+                        try {
+                            raw_response = utility::conversions::to_utf8string(response.extract_string().get());
+                            std::cerr << "[HTTP CLIENT] Raw response body: " << raw_response << std::endl;
+                        } catch (const std::exception& ex) {
+                            std::cerr << "[HTTP CLIENT] Failed to extract raw response: " << ex.what() << std::endl;
+                            raw_response = "Unable to extract response body";
+                        }
+                        
+                        return {
+                            {"status", "error"},
+                            {"message", std::string("JSON extraction error: ") + e.what()},
+                            {"error_type", "json_extraction_error"},
+                            {"raw_response", raw_response},
+                            {"server_url", server_url},
+                            {"tool_name", tool_name}
+                        };
+                    }
                 } else {
+                    std::string error_body;
+                    try {
+                        error_body = utility::conversions::to_utf8string(response.extract_string().get());
+                        std::cerr << "[HTTP CLIENT] HTTP error body: " << error_body << std::endl;
+                    } catch (...) {
+                        error_body = "Unable to extract error body";
+                    }
+                    
                     return {
                         {"status", "error"},
-                        {"message", "HTTP error: " + std::to_string(response.status_code())}
+                        {"message", "HTTP error: " + std::to_string(response.status_code())},
+                        {"http_status", response.status_code()},
+                        {"error_body", error_body},
+                        {"server_url", server_url},
+                        {"tool_name", tool_name}
                     };
                 }
-            } catch (const std::exception& e) {
-                std::cerr << "Error executing tool " << tool_name << " on " << server_url << ": " << e.what() << std::endl;
+            } catch (const web::http::http_exception& e) {
+                std::cerr << "[HTTP CLIENT] HTTP exception executing tool " << tool_name << " on " << server_url << ": " << e.what() << std::endl;
                 return {
                     {"status", "error"},
-                    {"message", std::string("Exception: ") + e.what()}
+                    {"message", std::string("HTTP Exception: ") + e.what()},
+                    {"error_type", "http_exception"},
+                    {"server_url", server_url},
+                    {"tool_name", tool_name}
+                };
+            } catch (const web::uri_exception& e) {
+                std::cerr << "[HTTP CLIENT] URI exception executing tool " << tool_name << " on " << server_url << ": " << e.what() << std::endl;
+                return {
+                    {"status", "error"},
+                    {"message", std::string("URI Exception: ") + e.what()},
+                    {"error_type", "uri_exception"},
+                    {"server_url", server_url},
+                    {"tool_name", tool_name}
+                };
+            } catch (const std::exception& e) {
+                std::cerr << "[HTTP CLIENT] General exception executing tool " << tool_name << " on " << server_url << ": " << e.what() << std::endl;
+                return {
+                    {"status", "error"},
+                    {"message", std::string("Exception: ") + e.what()},
+                    {"error_type", "general_exception"},
+                    {"server_url", server_url},
+                    {"tool_name", tool_name}
                 };
             }
         }

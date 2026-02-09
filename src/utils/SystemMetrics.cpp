@@ -4,6 +4,7 @@
 #include <thread>
 #include <iomanip>
 #include <sstream>
+#include <cpprest/http_client.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -139,6 +140,27 @@ MonitoringData SystemMetricsCollector::get_monitoring_data(const std::string& se
     data.details["environment"] = "development";
     
     return data;
+}
+
+bool SystemMetricsCollector::check_service_health(const std::string& service_url) {
+    try {
+        // Create HTTP client
+        web::uri service_uri(utility::conversions::to_string_t(service_url));
+        web::uri_builder builder(service_uri);
+        builder.append_path(U("/health"));
+        
+        web::http::client::http_client client(builder.to_uri());
+        
+        // Send a GET request to the /health endpoint
+        web::http::http_request request(web::http::methods::GET);
+        auto response = client.request(request).get();
+        
+        // If we get a 200 OK response, the service is considered healthy
+        return response.status_code() == web::http::status_codes::OK;
+    } catch (const std::exception& e) {
+        // If there's any exception (connection refused, timeout, etc.), the service is down
+        return false;
+    }
 }
 
 } // namespace utils

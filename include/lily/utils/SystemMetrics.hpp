@@ -57,6 +57,8 @@ private:
     double get_disk_usage();
     std::string get_uptime();
 #endif
+    
+    bool check_service_health(const std::string& service_url);
 };
 
 } // namespace utils

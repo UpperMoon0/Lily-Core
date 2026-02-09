@@ -16,6 +16,7 @@ endif()
 include_directories(
     include
     third_party/json/include
+    third_party/websocketpp
     /usr/include/cpprest
 )
 
@@ -26,6 +27,7 @@ set(SOURCES
     src/services/ChatService.cpp
     src/services/MemoryService.cpp
     src/services/Service.cpp
+    src/services/SessionService.cpp
     src/services/TTSService.cpp
     src/services/EchoService.cpp
     src/services/HTTPServer.cpp
@@ -33,8 +35,13 @@ set(SOURCES
     src/utils/SystemMetrics.cpp
 )
 
+# Header directories (for IDE support)
+file(GLOB_RECURSE HEADERS
+    "include/lily/**/*.hpp"
+)
+
 # Create executable
 add_executable(lily_core ${SOURCES})
 
 # Link libraries
-target_link_libraries(lily_core PRIVATE pthread cpprest crypto ssl)
+target_link_libraries(lily_core PRIVATE pthread cpprest crypto ssl boost_system boost_thread)
