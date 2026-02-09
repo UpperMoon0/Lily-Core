@@ -34,6 +34,7 @@ public:
     // Server configuration
     std::string http_address = "0.0.0.0";
     uint16_t http_port = 8000;
+    uint16_t websocket_port = 9002;
     
     // Consul configuration
     std::string consul_host = "localhost";
@@ -77,6 +78,11 @@ public:
     
     AppConfig& withHttpPort(uint16_t port) {
         http_port = port;
+        return *this;
+    }
+
+    AppConfig& withWebSocketPort(uint16_t port) {
+        websocket_port = port;
         return *this;
     }
     
@@ -186,6 +192,10 @@ public:
         
         if ((env_value = getenv("LILY_HTTP_PORT")) != nullptr) {
             http_port = static_cast<uint16_t>(std::stoi(env_value));
+        }
+
+        if ((env_value = getenv("LILY_WEBSOCKET_PORT")) != nullptr) {
+            websocket_port = static_cast<uint16_t>(std::stoi(env_value));
         }
         
         if ((env_value = getenv("CONSUL_HOST")) != nullptr) {
