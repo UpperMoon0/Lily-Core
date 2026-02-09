@@ -108,7 +108,7 @@ namespace lily {
         }
 
         void Service::register_all_services(int http_port, int /*ws_port*/) {
-            std::vector<std::string> tags = {"http", "api", "websocket", "ws"};
+            std::vector<std::string> tags = {"orchestrator"};
             
             // Add public URL tag if DOMAIN_NAME is set
             if (const char* domain = std::getenv("DOMAIN_NAME")) {
