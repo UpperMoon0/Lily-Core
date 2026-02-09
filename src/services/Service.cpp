@@ -207,10 +207,6 @@ namespace lily {
                                                std::string tag_str = utility::conversions::to_utf8string(tag.as_string());
                                                if (tag_str == "mcp") {
                                                    info.mcp = true;
-                                               } else if (tag_str.find("hostname=") == 0) {
-                                                   std::string hostname = tag_str.substr(9);
-                                                   info.http_url = "https://" + hostname + "/api";
-                                                   info.websocket_url = "wss://" + hostname + "/ws";
                                                }
                                           }
                                       }
