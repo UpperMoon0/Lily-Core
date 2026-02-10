@@ -74,10 +74,31 @@ namespace lily {
             for (const auto& msg : conversation) {
                 context += msg.role + ": " + msg.content + "\n";
             }
-            context += "Current user message: " + user_message + "\n";
+            
+            // Initial Prompt with context
+            std::string system_prompt = _config.getGeminiSystemPrompt();
+            std::string initial_prompt = "System Prompt: " + (system_prompt.empty() ? "You are an AI assistant with access to tools." : system_prompt) + "\n\n";
+            initial_prompt += "Context:\n" + context + "\n\n";
+            initial_prompt += "User Message: " + user_message + "\n";
+            
+            // Instructions
+            initial_prompt += "Instructions:\n";
+            initial_prompt += "Analyze the user's request. If you need external information or need to perform an action, use the available tools.\n";
+            initial_prompt += "If you can answer directly or have completed the task, provide your final response.\n";
+
+            // Initialize conversation history for Gemini
+            nlohmann::json conversation_history = nlohmann::json::array();
+            
+            nlohmann::json user_turn = nlohmann::json::object();
+            user_turn["role"] = "user";
+            user_turn["parts"] = nlohmann::json::array();
+            nlohmann::json text_part;
+            text_part["text"] = initial_prompt;
+            user_turn["parts"].push_back(text_part);
+            
+            conversation_history.push_back(user_turn);
 
             int step_number = 1;
-            std::string current_context = context;
             std::string final_response;
 
             std::cout << "[AGENT LOOP] Starting step-based processing" << std::endl;
@@ -85,7 +106,7 @@ namespace lily {
             // Agent loop: continue until LLM decides to respond
             while (true) {
                 std::cout << "[AGENT LOOP] Executing step " << step_number << std::endl;
-                std::string step_result = execute_agent_step(available_tools, current_context, current_loop, step_number);
+                std::string step_result = execute_agent_step(available_tools, conversation_history, current_loop, step_number);
                 
                 // Check the type of the last step
                 if (!current_loop.steps.empty() && current_loop.steps.back().type == lily::models::AgentStepType::RESPONSE) {
@@ -94,9 +115,9 @@ namespace lily {
                     std::cout << "[AGENT LOOP] Step " << step_number << ": LLM decided to give final response" << std::endl;
                     break;
                 } else {
-                    // Tool was called, add result to context and continue
+                    // Tool was called, we continue the loop
+                    // The function response has already been appended to conversation_history in execute_agent_step
                     std::cout << "[AGENT LOOP] Step " << step_number << ": Tool executed, result: " << step_result << std::endl;
-                    current_context += "\nTool execution result: " + step_result + "\n";
                     step_number++;
                     
                     // Add safety check to prevent infinite loops
@@ -113,7 +134,7 @@ namespace lily {
         }
 
         std::string AgentLoopService::execute_agent_step(const std::vector<nlohmann::json>& available_tools,
-                                                     const std::string& context,
+                                                     nlohmann::json& conversation_history,
                                                      lily::models::AgentLoop& current_loop,
                                                      int step_number) {
             // Create step
@@ -121,21 +142,10 @@ namespace lily {
             step.step_number = step_number;
             step.timestamp = std::chrono::system_clock::now();
 
-            // Build prompt for LLM with tool information
-            std::string system_prompt = _config.getGeminiSystemPrompt();
-            std::string prompt = "System Prompt: " + (system_prompt.empty() ? "You are an AI assistant with access to tools." : system_prompt) + "\n\n";
-            prompt += "Analyze the user's request and decide whether to use a tool or provide a response directly.\n\n";
-            prompt += "Context:\n" + context + "\n\n";
-            
-            prompt += "Instructions:\n";
-            prompt += "Analyze the user's request. If you need external information or need to perform an action, use the available tools.\n";
-            prompt += "If you can answer directly or have completed the task, provide your final response.\n";
+            std::cout << "[AGENT LOOP] Step " << step_number << ": Sending request to Gemini with history size " << conversation_history.size() << std::endl;
 
-            std::cout << "[AGENT LOOP] Step " << step_number << ": Sending prompt to Gemini" << std::endl;
-            std::cout << "[AGENT LOOP] Prompt length: " << prompt.length() << " characters" << std::endl;
-
-            // Call Gemini with the prompt
-            auto response = call_gemini_with_tools(prompt, available_tools);
+            // Call Gemini with the history
+            auto response = call_gemini_with_tools(conversation_history, available_tools);
             
             std::cout << "[AGENT LOOP] Step " << step_number << ": Received response from Gemini" << std::endl;
             
@@ -144,6 +154,13 @@ namespace lily {
                 if (candidate.contains("content")) {
                     auto content = candidate["content"];
                     if (content.contains("parts") && content["parts"].is_array() && content["parts"].size() > 0) {
+                        
+                        // Append the model's turn to conversation history
+                        nlohmann::json model_turn = nlohmann::json::object();
+                        model_turn["role"] = "model";
+                        model_turn["parts"] = content["parts"]; // Keep the parts structure including function calls
+                        conversation_history.push_back(model_turn);
+
                         bool tool_called = false;
                         std::string text_response;
 
@@ -167,6 +184,26 @@ namespace lily {
                                 // Add step to loop
                                 current_loop.steps.push_back(step);
                                 
+                                // Append function response to conversation history (Function Turn)
+                                nlohmann::json function_turn = nlohmann::json::object();
+                                function_turn["role"] = "function";
+                                function_turn["parts"] = nlohmann::json::array();
+                                
+                                nlohmann::json function_response_part = nlohmann::json::object();
+                                nlohmann::json function_response = nlohmann::json::object();
+                                function_response["name"] = step.tool_name;
+                                
+                                // Gemini expects 'response' field with keys and values
+                                nlohmann::json response_content = nlohmann::json::object();
+                                response_content["name"] = step.tool_name; // Redundant but safe
+                                response_content["content"] = step.tool_result;
+                                
+                                function_response["response"] = response_content;
+                                function_response_part["functionResponse"] = function_response;
+                                
+                                function_turn["parts"].push_back(function_response_part);
+                                conversation_history.push_back(function_turn);
+
                                 tool_called = true;
                                 return step.tool_result.dump();
                             } else if (part.contains("text")) {
@@ -175,7 +212,7 @@ namespace lily {
                         }
 
                         if (!tool_called) {
-                            // No tool call, treat as final response or thinking
+                            // No tool call, treat as final response
                             std::cout << "[AGENT LOOP] Step " << step_number << ": LLM response: " << text_response << std::endl;
                             
                             step.type = lily::models::AgentStepType::RESPONSE;
@@ -262,7 +299,7 @@ namespace lily {
             return gemini_tool;
         }
 
-        nlohmann::json AgentLoopService::call_gemini_with_tools(const std::string& prompt, const std::vector<nlohmann::json>& tools) {
+        nlohmann::json AgentLoopService::call_gemini_with_tools(const nlohmann::json& contents, const std::vector<nlohmann::json>& tools) {
             std::string api_key = _config.getGeminiApiKey();
             if (api_key.empty()) {
                 std::cerr << "[GEMINI API] Error: GEMINI_API_KEY not configured" << std::endl;
@@ -280,17 +317,21 @@ namespace lily {
             std::string url = "/v1beta/models/" + model + ":generateContent?key=" + api_key;
             request.set_request_uri(web::uri(url));
 
-            // Build request with tools
+            // Build request
             web::json::value request_json = web::json::value::object();
             
-            web::json::value contents_json = web::json::value::array(1);
-            web::json::value content_obj = web::json::value::object();
-            content_obj["role"] = web::json::value::string("user");
-            content_obj["parts"] = web::json::value::array(1);
-            content_obj["parts"][0]["text"] = web::json::value::string(prompt);
-            contents_json[0] = content_obj;
+            // Convert nlohmann::json contents to web::json::value
+            std::string contents_str = contents.dump();
             
-            request_json["contents"] = contents_json;
+            // This is a bit inefficient (json -> string -> json), but reliable for conversion
+            // since we don't have a direct nlohmann->cpprest converter helper exposed here.
+            // Using Parse implementation of cpprest
+            try {
+                request_json["contents"] = web::json::value::parse(utility::conversions::to_string_t(contents_str));
+            } catch (const std::exception& e) {
+                 std::cerr << "[GEMINI API] Error converting contents json: " << e.what() << std::endl;
+                 return nlohmann::json::object();
+            }
 
             // Add tools to the request if available
             if (!tools.empty()) {

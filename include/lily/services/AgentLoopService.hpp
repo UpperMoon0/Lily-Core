@@ -33,10 +33,10 @@ namespace lily {
             // Helper methods for the step-based loop
             std::string process_with_tools(const std::string& user_message, const std::string& user_id, lily::models::AgentLoop& current_loop);
             std::string execute_agent_step(const std::vector<nlohmann::json>& available_tools, 
-                                         const std::string& context, 
+                                         nlohmann::json& conversation_history,
                                          lily::models::AgentLoop& current_loop,
                                          int step_number);
-            nlohmann::json call_gemini_with_tools(const std::string& prompt, const std::vector<nlohmann::json>& tools);
+            nlohmann::json call_gemini_with_tools(const nlohmann::json& contents, const std::vector<nlohmann::json>& tools);
         };
     }
 }
