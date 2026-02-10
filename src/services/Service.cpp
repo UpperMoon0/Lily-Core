@@ -210,8 +210,8 @@ namespace lily {
                                       }
                                       
                                       if (!hostname_tag.empty()) {
-                                          info.http_url = "http://" + hostname_tag + "/api";
-                                          info.websocket_url = "ws://" + hostname_tag + "/ws";
+                                          info.http_url = "https://" + hostname_tag + "/api";
+                                          info.websocket_url = "wss://" + hostname_tag + "/ws";
                                           
                                           _services.push_back(info);
                                           std::cout << "[ServiceDiscovery] Discovered: " << service_name << " at " << info.http_url << std::endl;
