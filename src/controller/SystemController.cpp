@@ -1,12 +1,14 @@
 #include "lily/controller/SystemController.hpp"
 #include "lily/config/AppConfig.hpp"
 #include "lily/utils/SystemMetrics.hpp"
+#include "lily/services/Service.hpp"
 #include <iostream>
 
 namespace lily {
 namespace controller {
 
-    SystemController::SystemController(config::AppConfig& config) : _config(&config) {}
+    SystemController::SystemController(config::AppConfig& config, services::Service& toolService) 
+        : _config(&config), _toolService(&toolService) {}
 
     nlohmann::json SystemController::getHealth() {
         return {{"status", "UP"}};
@@ -77,6 +79,22 @@ namespace controller {
         }
         response["details"] = details;
         return response;
+    }
+
+    nlohmann::json SystemController::getTools() {
+        if (!_toolService) return {{"error", "Tool service not initialized"}};
+
+        auto tools_per_server = _toolService->get_tools_per_server();
+        
+        nlohmann::json response;
+        for (const auto& server : tools_per_server) {
+            nlohmann::json server_entry;
+            server_entry["server_url"] = server.first;
+            server_entry["tools"] = server.second;
+            response.push_back(server_entry);
+        }
+        
+        return {{"servers", response}};
     }
 
 }

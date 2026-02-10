@@ -46,6 +46,11 @@ namespace lily {
                     con->set_status(websocketpp::http::status_code::ok);
                     return;
                 }
+                if (method == "GET" && (path == "/api/tools" || path == "/tools")) {
+                    con->set_body(_system_controller->getTools().dump());
+                    con->set_status(websocketpp::http::status_code::ok);
+                    return;
+                }
             }
 
             // --- Session Controller Routes ---

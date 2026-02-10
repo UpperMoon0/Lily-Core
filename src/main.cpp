@@ -128,8 +128,11 @@ std::shared_ptr<ChatService> createChatService(
 
 // Controllers
 
-std::shared_ptr<lily::controller::SystemController> createSystemController(lily::config::AppConfig& config) {
-    return std::make_shared<lily::controller::SystemController>(config);
+std::shared_ptr<lily::controller::SystemController> createSystemController(
+    lily::config::AppConfig& config,
+    std::shared_ptr<Service> toolService
+) {
+    return std::make_shared<lily::controller::SystemController>(config, *toolService);
 }
 
 std::shared_ptr<lily::controller::SessionController> createSessionController(
@@ -255,7 +258,7 @@ int main(int argc, char** argv) {
     context->registerBean("chatService", chat_service);
 
     // Create Controllers
-    auto system_controller = createSystemController(config);
+    auto system_controller = createSystemController(config, tool_service);
     auto session_controller = createSessionController(session_service, gateway_service);
     auto chat_controller = createChatController(chat_service, agent_loop_service, memory_service);
 
