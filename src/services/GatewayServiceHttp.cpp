@@ -12,6 +12,7 @@ namespace lily {
             con->append_header("Access-Control-Allow-Origin", "*");
             con->append_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
             con->append_header("Access-Control-Allow-Headers", "Content-Type");
+            con->append_header("Content-Type", "application/json");
             
             if (method == "OPTIONS") {
                 con->set_status(websocketpp::http::status_code::ok);
@@ -113,7 +114,7 @@ namespace lily {
             }
 
             // Default 404
-            con->set_body("Not Found");
+            con->set_body(nlohmann::json({{"error", "Not Found"}}).dump());
             con->set_status(websocketpp::http::status_code::not_found);
         }
     }
