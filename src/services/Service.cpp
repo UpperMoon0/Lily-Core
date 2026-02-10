@@ -194,12 +194,7 @@ namespace lily {
                                       info.id = service_name;
                                       info.name = service_name;
                                       
-                                      std::string address = utility::conversions::to_utf8string(service_obj[U("Address")].as_string());
-                                      int port = service_obj[U("Port")].as_integer();
-                                      
-                                      info.http_url = "http://" + address + ":" + std::to_string(port);
-                                      info.websocket_url = "ws://" + address + ":" + std::to_string(port);
-                                      
+                                      std::string hostname_tag;
                                       info.mcp = false;
                                       if (service_obj.has_field(U("Tags"))) {
                                           auto tags = service_obj[U("Tags")].as_array();
@@ -208,11 +203,19 @@ namespace lily {
                                                if (tag_str == "mcp") {
                                                    info.mcp = true;
                                                }
+                                               if (tag_str.rfind("hostname=", 0) == 0) {
+                                                   hostname_tag = tag_str.substr(9);
+                                               }
                                           }
                                       }
                                       
-                                      _services.push_back(info);
-                                      std::cout << "[ServiceDiscovery] Discovered: " << service_name << " at " << info.http_url << std::endl;
+                                      if (!hostname_tag.empty()) {
+                                          info.http_url = "http://" + hostname_tag + "/api";
+                                          info.websocket_url = "ws://" + hostname_tag + "/ws";
+                                          
+                                          _services.push_back(info);
+                                          std::cout << "[ServiceDiscovery] Discovered: " << service_name << " at " << info.http_url << std::endl;
+                                      }
                                   }
                               }
                          }
