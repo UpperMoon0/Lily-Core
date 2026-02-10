@@ -212,6 +212,7 @@ namespace lily {
                                       if (!hostname_tag.empty()) {
                                           info.http_url = "https://" + hostname_tag + "/api";
                                           info.websocket_url = "wss://" + hostname_tag + "/ws";
+                                          info.mcp_url = "https://" + hostname_tag + "/mcp";
                                           
                                           _services.push_back(info);
                                           std::cout << "[ServiceDiscovery] Discovered: " << service_name << " at " << info.http_url << std::endl;
@@ -235,12 +236,12 @@ namespace lily {
                 // Only discover tools from MCP-enabled services
                 if (service.mcp) {
                     try {
-                        auto tools = discover_tools_from_server(service.http_url);
+                        auto tools = discover_tools_from_server(service.mcp_url);
                         _tools.insert(_tools.end(), tools.begin(), tools.end());
-                        _discovered_servers.push_back(service.http_url);
-                        _tools_per_server[service.http_url] = tools;
+                        _discovered_servers.push_back(service.mcp_url);
+                        _tools_per_server[service.mcp_url] = tools;
                     } catch (const std::exception& e) {
-                        std::cerr << "Failed to discover tools from " << service.http_url << " (" << service.name << "): " << e.what() << std::endl;
+                        std::cerr << "Failed to discover tools from " << service.mcp_url << " (" << service.name << "): " << e.what() << std::endl;
                     }
                 }
             }
@@ -260,7 +261,7 @@ namespace lily {
                 request[U("id")] = json::value::number(1);
 
                 // Send request
-                auto response = client.request(methods::POST, U("/v1/mcp"), request).get();
+                auto response = client.request(methods::POST, U(""), request).get();
 
                 if (response.status_code() == status_codes::OK) {
                     auto response_json = response.extract_json().get();
@@ -378,8 +379,8 @@ namespace lily {
                 request[U("params")] = params;
 
                 // Send request with detailed logging
-                std::cout << "[HTTP CLIENT] Sending request to " << server_url << "/mcp" << std::endl;
-                auto response = client.request(methods::POST, U("/mcp"), request).get();
+                std::cout << "[HTTP CLIENT] Sending request to " << server_url << std::endl;
+                auto response = client.request(methods::POST, U(""), request).get();
                 std::cout << "[HTTP CLIENT] Received response with status: " << response.status_code() << std::endl;
 
                 if (response.status_code() == status_codes::OK) {

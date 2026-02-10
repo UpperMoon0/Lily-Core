@@ -19,6 +19,7 @@ namespace lily {
             std::string name;
             std::string http_url;
             std::string websocket_url;
+            std::string mcp_url;
             bool mcp;
         };
 
