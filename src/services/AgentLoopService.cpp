@@ -87,9 +87,10 @@ namespace lily {
                 std::cout << "[AGENT LOOP] Executing step " << step_number << std::endl;
                 std::string step_result = execute_agent_step(available_tools, current_context, current_loop, step_number);
                 
-                if (step_result.find("FINAL_RESPONSE:") == 0) {
+                // Check the type of the last step
+                if (!current_loop.steps.empty() && current_loop.steps.back().type == lily::models::AgentStepType::RESPONSE) {
                     // LLM decided to give final response
-                    final_response = step_result.substr(15); // Remove "FINAL_RESPONSE:" prefix
+                    final_response = step_result;
                     std::cout << "[AGENT LOOP] Step " << step_number << ": LLM decided to give final response" << std::endl;
                     break;
                 } else {
@@ -126,19 +127,9 @@ namespace lily {
             prompt += "Analyze the user's request and decide whether to use a tool or provide a response directly.\n\n";
             prompt += "Context:\n" + context + "\n\n";
             
-            prompt += "Available tools:\n";
-            for (const auto& tool : available_tools) {
-                prompt += "- " + tool["name"].get<std::string>() + ": " + tool.value("description", "No description") + "\n";
-            }
-
-            prompt += R"(
-Instructions:
-1. Think step by step about whether a tool is needed
-2. If a tool is needed, respond with: TOOL_CALL:{"tool_name": "tool_name", "reasoning": "your reasoning", "parameters": {}}
-3. If no tool is needed, respond with: FINAL_RESPONSE: your final response to the user
-
-Your response must be in JSON format if using a tool, or start with FINAL_RESPONSE: if giving a direct response.
-)";
+            prompt += "Instructions:\n";
+            prompt += "Analyze the user's request. If you need external information or need to perform an action, use the available tools.\n";
+            prompt += "If you can answer directly or have completed the task, provide your final response.\n";
 
             std::cout << "[AGENT LOOP] Step " << step_number << ": Sending prompt to Gemini" << std::endl;
             std::cout << "[AGENT LOOP] Prompt length: " << prompt.length() << " characters" << std::endl;
@@ -153,21 +144,17 @@ Your response must be in JSON format if using a tool, or start with FINAL_RESPON
                 if (candidate.contains("content")) {
                     auto content = candidate["content"];
                     if (content.contains("parts") && content["parts"].is_array() && content["parts"].size() > 0) {
-                        std::string llm_response = content["parts"][0]["text"].get<std::string>();
-                        std::cout << "[AGENT LOOP] Step " << step_number << ": LLM response: " << llm_response << std::endl;
+                        bool tool_called = false;
+                        std::string text_response;
 
-                        if (llm_response.find("TOOL_CALL:") == 0) {
-                            // Parse tool call
-                            step.type = lily::models::AgentStepType::TOOL_CALL;
-                            step.reasoning = "Decided to use tool based on analysis";
-                            
-                            try {
-                                std::string json_str = llm_response.substr(10);
-                                nlohmann::json tool_call = nlohmann::json::parse(json_str);
-                                
-                                step.tool_name = tool_call["tool_name"];
-                                step.reasoning = tool_call.value("reasoning", "No reasoning provided");
-                                step.tool_parameters = tool_call.value("parameters", nlohmann::json::object());
+                        // Iterate through parts to find function calls or text
+                        for (const auto& part : content["parts"]) {
+                            if (part.contains("functionCall")) {
+                                auto function_call = part["functionCall"];
+                                step.type = lily::models::AgentStepType::TOOL_CALL;
+                                step.tool_name = function_call["name"].get<std::string>();
+                                step.tool_parameters = function_call.value("args", nlohmann::json::object());
+                                step.reasoning = "Gemini native function call";
                                 
                                 std::cout << "[AGENT LOOP] Step " << step_number << ": Calling tool: " << step.tool_name << std::endl;
                                 std::cout << "[AGENT LOOP] Step " << step_number << ": Tool parameters: " << step.tool_parameters.dump() << std::endl;
@@ -180,28 +167,21 @@ Your response must be in JSON format if using a tool, or start with FINAL_RESPON
                                 // Add step to loop
                                 current_loop.steps.push_back(step);
                                 
+                                tool_called = true;
                                 return step.tool_result.dump();
-                            } catch (const std::exception& e) {
-                                std::cerr << "[AGENT LOOP] Step " << step_number << ": Error parsing tool call: " << e.what() << std::endl;
-                                step.type = lily::models::AgentStepType::THINKING;
-                                step.reasoning = "Error parsing tool call: " + std::string(e.what());
-                                current_loop.steps.push_back(step);
-                                return "Error: Failed to parse tool call";
+                            } else if (part.contains("text")) {
+                                text_response += part["text"].get<std::string>();
                             }
-                        } else if (llm_response.find("FINAL_RESPONSE:") == 0) {
-                            // Final response
-                            std::cout << "[AGENT LOOP] Step " << step_number << ": LLM decided to give final response" << std::endl;
+                        }
+
+                        if (!tool_called) {
+                            // No tool call, treat as final response or thinking
+                            std::cout << "[AGENT LOOP] Step " << step_number << ": LLM response: " << text_response << std::endl;
+                            
                             step.type = lily::models::AgentStepType::RESPONSE;
-                            step.reasoning = "Decided to provide direct response";
+                            step.reasoning = "Direct response";
                             current_loop.steps.push_back(step);
-                            return llm_response;
-                        } else {
-                            // Thinking step
-                            std::cout << "[AGENT LOOP] Step " << step_number << ": LLM returned thinking response" << std::endl;
-                            step.type = lily::models::AgentStepType::THINKING;
-                            step.reasoning = llm_response;
-                            current_loop.steps.push_back(step);
-                            return "Continue analysis";
+                            return text_response;
                         }
                     } else {
                         std::cerr << "[AGENT LOOP] Step " << step_number << ": No parts in content" << std::endl;
