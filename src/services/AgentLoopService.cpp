@@ -9,6 +9,8 @@
 #include <sstream>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <iomanip>
+#include <ctime>
 
 namespace lily {
     namespace services {
@@ -77,7 +79,14 @@ namespace lily {
             
             // Initial Prompt with context
             std::string system_prompt = _config.getGeminiSystemPrompt();
-            std::string initial_prompt = "System Prompt: " + (system_prompt.empty() ? "You are an AI assistant with access to tools." : system_prompt) + "\n\n";
+            std::string initial_prompt = "System Prompt: " + (system_prompt.empty() ? "You are an AI assistant with access to tools." : system_prompt) + "\n";
+
+            // Add Current Time
+            auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::stringstream ss;
+            ss << std::put_time(std::localtime(&now), "%Y-%m-%d %H:%M:%S");
+            initial_prompt += "Current Date/Time: " + ss.str() + "\n\n";
+
             initial_prompt += "Context:\n" + context + "\n\n";
             initial_prompt += "User Message: " + user_message + "\n";
             
