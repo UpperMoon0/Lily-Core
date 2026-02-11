@@ -114,6 +114,8 @@ namespace controller {
                     step_json["timestamp"] = std::string(buf);
                 }
                 
+                step_json["duration_seconds"] = step.duration_seconds;
+                
                 steps_json.push_back(step_json);
             }
             response["steps"] = steps_json;

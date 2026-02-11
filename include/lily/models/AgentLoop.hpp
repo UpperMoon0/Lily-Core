@@ -23,6 +23,7 @@ namespace lily {
             nlohmann::json tool_parameters;
             nlohmann::json tool_result;
             std::chrono::system_clock::time_point timestamp;
+            double duration_seconds;
         };
 
         struct AgentLoop {

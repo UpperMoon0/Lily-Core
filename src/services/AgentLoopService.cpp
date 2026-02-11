@@ -150,13 +150,21 @@ namespace lily {
             lily::models::AgentStep step;
             step.step_number = step_number;
             step.timestamp = std::chrono::system_clock::now();
+            auto step_start_time = std::chrono::system_clock::now();
 
             std::cout << "[AGENT LOOP] Step " << step_number << ": Sending request to Gemini with history size " << conversation_history.size() << std::endl;
 
             // Call Gemini with the history
             auto response = call_gemini_with_tools(conversation_history, available_tools);
             
-            std::cout << "[AGENT LOOP] Step " << step_number << ": Received response from Gemini" << std::endl;
+            // Calculate step duration
+            auto step_end_time = std::chrono::system_clock::now();
+            auto step_duration = std::chrono::duration_cast<std::chrono::duration<double>>(
+                step_end_time - step_start_time
+            );
+            step.duration_seconds = step_duration.count();
+            
+            std::cout << "[AGENT LOOP] Step " << step_number << ": Received response from Gemini (took " << step.duration_seconds << "s)" << std::endl;
             
             if (response.contains("candidates") && response["candidates"].is_array() && response["candidates"].size() > 0) {
                 auto candidate = response["candidates"][0];
