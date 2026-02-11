@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <mutex>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <iomanip>
 #include <ctime>
@@ -51,13 +52,14 @@ namespace lily {
             std::cout << "[AGENT LOOP] Total steps executed: " << current_loop.steps.size() << std::endl;
             std::cout << "[AGENT LOOP] Total time taken: " << current_loop.duration_seconds << " seconds" << std::endl;
 
-            // Store the agent loop
+            // Store the agent loop per user
             {
                 std::lock_guard<std::mutex> lock(_agentLoopsMutex);
-                _agentLoops.push_back(current_loop);
-                // Keep only the last 10 agent loops to prevent memory issues
-                if (_agentLoops.size() > 10) {
-                    _agentLoops.erase(_agentLoops.begin());
+                auto& userLoops = _agentLoopsPerUser[user_id];
+                userLoops.push_back(current_loop);
+                // Keep only the last 10 agent loops per user to prevent memory issues
+                if (userLoops.size() > 10) {
+                    userLoops.erase(userLoops.begin());
                 }
             }
 
@@ -407,23 +409,74 @@ namespace lily {
             return nlohmann::json::object();
         }
 
+        // Per-user agent loop tracking methods
+        
+        std::vector<std::string> AgentLoopService::get_user_ids() const {
+            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
+            std::vector<std::string> user_ids;
+            for (const auto& pair : _agentLoopsPerUser) {
+                if (!pair.second.empty()) {
+                    user_ids.push_back(pair.first);
+                }
+            }
+            return user_ids;
+        }
+        
+        std::vector<lily::models::AgentLoop> AgentLoopService::get_agent_loops_for_user(const std::string& user_id) const {
+            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
+            auto it = _agentLoopsPerUser.find(user_id);
+            if (it != _agentLoopsPerUser.end()) {
+                return it->second;
+            }
+            return std::vector<lily::models::AgentLoop>();
+        }
+        
+        const lily::models::AgentLoop* AgentLoopService::get_last_agent_loop_for_user(const std::string& user_id) const {
+            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
+            auto it = _agentLoopsPerUser.find(user_id);
+            if (it != _agentLoopsPerUser.end() && !it->second.empty()) {
+                return &it->second.back();
+            }
+            return nullptr;
+        }
+        
+        void AgentLoopService::clear_agent_loops_for_user(const std::string& user_id) {
+            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
+            _agentLoopsPerUser.erase(user_id);
+        }
+        
+        void AgentLoopService::clear_all_agent_loops() {
+            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
+            _agentLoopsPerUser.clear();
+        }
+        
+        // Legacy methods for backward compatibility
         const lily::models::AgentLoop& AgentLoopService::get_last_agent_loop() const {
             std::lock_guard<std::mutex> lock(_agentLoopsMutex);
-            if (_agentLoops.empty()) {
-                static lily::models::AgentLoop empty_loop;
-                return empty_loop;
+            static lily::models::AgentLoop empty_loop;
+            
+            // Return the last agent loop across all users
+            for (auto it = _agentLoopsPerUser.rbegin(); it != _agentLoopsPerUser.rend(); ++it) {
+                if (!it->second.empty()) {
+                    return it->second.back();
+                }
             }
-            return _agentLoops.back();
+            return empty_loop;
         }
-
+        
         void AgentLoopService::clear_agent_loops() {
-            std::lock_guard<std::mutex> lock(_agentLoopsMutex);
-            _agentLoops.clear();
+            clear_all_agent_loops();
         }
-
+        
         std::vector<lily::models::AgentLoop> AgentLoopService::get_agent_loops() const {
             std::lock_guard<std::mutex> lock(_agentLoopsMutex);
-            return _agentLoops;
+            std::vector<lily::models::AgentLoop> all_loops;
+            for (const auto& pair : _agentLoopsPerUser) {
+                for (const auto& loop : pair.second) {
+                    all_loops.push_back(loop);
+                }
+            }
+            return all_loops;
         }
     }
 }

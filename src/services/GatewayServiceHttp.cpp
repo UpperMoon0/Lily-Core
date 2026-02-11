@@ -68,6 +68,29 @@ namespace lily {
                     return;
                 }
                 
+                // Per-user agent loop routes
+                if (method == "GET" && (path == "/api/agent-loops/users" || path == "/agent-loops/users")) {
+                    con->set_body(_system_controller->getUserIdsWithAgentLoops().dump());
+                    con->set_status(websocketpp::http::status_code::ok);
+                    return;
+                }
+                
+                // GET /api/agent-loops/user/:userId
+                if ((path.rfind("/api/agent-loops/user/", 0) == 0 || path.rfind("/agent-loops/user/", 0) == 0)) {
+                    std::string prefix = (path.rfind("/api/", 0) == 0) ? "/api/agent-loops/user/" : "/agent-loops/user/";
+                    std::string user_id = path.substr(prefix.length());
+                    
+                    if (method == "GET") {
+                        con->set_body(_system_controller->getAgentLoopsForUser(user_id).dump());
+                        con->set_status(websocketpp::http::status_code::ok);
+                        return;
+                    } else if (method == "DELETE") {
+                        con->set_body(_system_controller->clearAgentLoopsForUser(user_id).dump());
+                        con->set_status(websocketpp::http::status_code::ok);
+                        return;
+                    }
+                }
+                
                 if (method == "POST" && (path == "/api/chat" || path == "/chat")) {
                     try {
                         auto json_value = nlohmann::json::parse(con->get_request_body());

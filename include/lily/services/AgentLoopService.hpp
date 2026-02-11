@@ -7,6 +7,7 @@
 #include <lily/config/AppConfig.hpp>
 #include <string>
 #include <vector>
+#include <map>
 #include <memory>
 
 namespace lily {
@@ -16,7 +17,14 @@ namespace lily {
             AgentLoopService(MemoryService& memoryService, Service& toolService, config::AppConfig& config);
             std::string run_loop(const std::string& user_message, const std::string& user_id);
             
-            // New methods for agent loop tracking
+            // Per-user agent loop tracking
+            std::vector<std::string> get_user_ids() const;
+            std::vector<lily::models::AgentLoop> get_agent_loops_for_user(const std::string& user_id) const;
+            const lily::models::AgentLoop* get_last_agent_loop_for_user(const std::string& user_id) const;
+            void clear_agent_loops_for_user(const std::string& user_id);
+            void clear_all_agent_loops();
+            
+            // Legacy methods for backward compatibility
             const lily::models::AgentLoop& get_last_agent_loop() const;
             void clear_agent_loops();
             std::vector<lily::models::AgentLoop> get_agent_loops() const;
@@ -26,8 +34,8 @@ namespace lily {
             Service& _toolService;
             config::AppConfig& _config;
             
-            // Agent loop tracking
-            std::vector<lily::models::AgentLoop> _agentLoops;
+            // Per-user agent loop tracking
+            std::map<std::string, std::vector<lily::models::AgentLoop>> _agentLoopsPerUser;
             mutable std::mutex _agentLoopsMutex;
             
             // Helper methods for the step-based loop

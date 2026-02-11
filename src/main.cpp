@@ -259,6 +259,7 @@ int main(int argc, char** argv) {
 
     // Create Controllers
     auto system_controller = createSystemController(config, tool_service);
+    system_controller->setAgentLoopService(agent_loop_service.get());
     auto session_controller = createSessionController(session_service, gateway_service);
     auto chat_controller = createChatController(chat_service, agent_loop_service, memory_service);
 
