@@ -359,7 +359,7 @@ namespace lily {
             try {
                 // Create HTTP client with timeout configuration
                 http_client_config config;
-                config.set_timeout(std::chrono::seconds(30));
+                config.set_timeout(std::chrono::seconds(120));
                 http_client client(U(server_url), config);
 
                 // Prepare MCP tools/call request
