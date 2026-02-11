@@ -2,10 +2,14 @@
 #define LILY_CONFIG_APP_CONFIG_HPP
 
 #include <string>
+#include <vector>
 #include <memory>
 #include <mutex>
+#include <atomic>
 #include <fstream>
 #include <iostream>
+#include <sstream>
+#include <algorithm>
 #include <nlohmann/json.hpp>
 
 namespace lily {
@@ -43,9 +47,12 @@ public:
     
     // Feature flags
     bool gemini_enabled = false;
-    std::string gemini_api_key;
+    std::vector<std::string> gemini_api_keys;
     std::string gemini_model = "gemini-2.5-flash";
     std::string gemini_system_prompt = "You are Lily, a helpful AI assistant.";
+    
+    // Round-robin index for API keys (atomic for thread-safe access)
+    mutable std::atomic<size_t> _current_key_index{0};
     
     // Config persistence
     std::string config_file_path;
@@ -101,25 +108,77 @@ public:
         return *this;
     }
     
-    AppConfig& withGeminiApiKey(const std::string& api_key) {
+    AppConfig& withGeminiApiKeys(const std::vector<std::string>& api_keys) {
         std::lock_guard<std::mutex> lock(config_mutex.m);
-        if (!api_key.empty()) {
-            gemini_api_key = api_key;
-            gemini_enabled = true;
+        gemini_api_keys.clear();
+        for (const auto& key : api_keys) {
+            if (!key.empty()) {
+                gemini_api_keys.push_back(key);
+            }
         }
+        gemini_enabled = !gemini_api_keys.empty();
         return *this;
     }
 
     // Thread-safe getters/setters for dynamic config
-    std::string getGeminiApiKey() const {
+    std::vector<std::string> getGeminiApiKeys() const {
         std::lock_guard<std::mutex> lock(config_mutex.m);
-        return gemini_api_key;
+        return gemini_api_keys;
+    }
+    
+    std::string getCurrentGeminiApiKey() const {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        if (gemini_api_keys.empty()) {
+            return "";
+        }
+        // Get current key and advance round-robin index
+        size_t index = _current_key_index % gemini_api_keys.size();
+        _current_key_index = (index + 1) % gemini_api_keys.size();
+        return gemini_api_keys[index];
+    }
+    
+    std::string peekNextGeminiApiKey() const {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        if (gemini_api_keys.empty()) {
+            return "";
+        }
+        size_t index = _current_key_index % gemini_api_keys.size();
+        return gemini_api_keys[index];
     }
 
-    void setGeminiApiKey(const std::string& key) {
+    void setGeminiApiKeys(const std::vector<std::string>& keys) {
         std::lock_guard<std::mutex> lock(config_mutex.m);
-        gemini_api_key = key;
-        gemini_enabled = !key.empty();
+        gemini_api_keys.clear();
+        for (const auto& key : keys) {
+            if (!key.empty()) {
+                gemini_api_keys.push_back(key);
+            }
+        }
+        gemini_enabled = !gemini_api_keys.empty();
+        _current_key_index = 0;
+    }
+    
+    void addGeminiApiKey(const std::string& key) {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        if (!key.empty()) {
+            gemini_api_keys.push_back(key);
+            gemini_enabled = !gemini_api_keys.empty();
+        }
+    }
+    
+    void removeGeminiApiKey(const std::string& key) {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        gemini_api_keys.erase(
+            std::remove(gemini_api_keys.begin(), gemini_api_keys.end(), key),
+            gemini_api_keys.end()
+        );
+        gemini_enabled = !gemini_api_keys.empty();
+        _current_key_index = 0;
+    }
+    
+    size_t getGeminiApiKeyCount() const {
+        std::lock_guard<std::mutex> lock(config_mutex.m);
+        return gemini_api_keys.size();
     }
 
     std::string getGeminiModel() const {
@@ -210,11 +269,19 @@ public:
             service_name = env_value;
         }
         
-        // Load GEMINI_API_KEY from env only if not already set (e.g. from file)
-        if ((env_value = getenv("GEMINI_API_KEY")) != nullptr) {
+        // Load GEMINI_API_KEYS from environment variable (comma-separated)
+        if ((env_value = getenv("GEMINI_API_KEYS")) != nullptr) {
             std::lock_guard<std::mutex> lock(config_mutex.m);
-            gemini_api_key = env_value;
-            gemini_enabled = true;
+            gemini_api_keys.clear();
+            std::string keys_str(env_value);
+            std::stringstream ss(keys_str);
+            std::string key;
+            while (std::getline(ss, key, ',')) {
+                if (!key.empty()) {
+                    gemini_api_keys.push_back(key);
+                }
+            }
+            gemini_enabled = !gemini_api_keys.empty();
         }
         
         if ((env_value = getenv("ECHO_WS_URL")) != nullptr) {
@@ -236,9 +303,14 @@ public:
                 file >> j;
                 
                 std::lock_guard<std::mutex> lock(config_mutex.m);
-                if (j.contains("gemini_api_key")) {
-                    gemini_api_key = j["gemini_api_key"].get<std::string>();
-                    gemini_enabled = !gemini_api_key.empty();
+                if (j.contains("gemini_api_keys") && j["gemini_api_keys"].is_array()) {
+                    gemini_api_keys.clear();
+                    for (const auto& key : j["gemini_api_keys"]) {
+                        if (key.is_string()) {
+                            gemini_api_keys.push_back(key.get<std::string>());
+                        }
+                    }
+                    gemini_enabled = !gemini_api_keys.empty();
                 }
                 if (j.contains("gemini_model")) {
                     gemini_model = j["gemini_model"].get<std::string>();
@@ -259,7 +331,7 @@ public:
         nlohmann::json j;
         {
             std::lock_guard<std::mutex> lock(config_mutex.m);
-            j["gemini_api_key"] = gemini_api_key;
+            j["gemini_api_keys"] = gemini_api_keys;
             j["gemini_model"] = gemini_model;
             j["gemini_system_prompt"] = gemini_system_prompt;
         }

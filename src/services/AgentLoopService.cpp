@@ -18,8 +18,7 @@ namespace lily {
             : _memoryService(memoryService), _toolService(toolService), _config(config) {}
 
         std::string AgentLoopService::run_loop(const std::string& user_message, const std::string& user_id) {
-            std::string api_key = _config.getGeminiApiKey();
-            if (api_key.empty()) {
+            if (_config.getGeminiApiKeyCount() == 0) {
                 std::cerr << "GEMINI_API_KEY not configured" << std::endl;
                 return "Error: GEMINI_API_KEY not configured";
             }
@@ -317,9 +316,9 @@ namespace lily {
         }
 
         nlohmann::json AgentLoopService::call_gemini_with_tools(const nlohmann::json& contents, const std::vector<nlohmann::json>& tools) {
-            std::string api_key = _config.getGeminiApiKey();
-            if (api_key.empty()) {
-                std::cerr << "[GEMINI API] Error: GEMINI_API_KEY not configured" << std::endl;
+            size_t max_retries = _config.getGeminiApiKeyCount();
+            if (max_retries == 0) {
+                std::cerr << "[GEMINI API] Error: No GEMINI_API_KEY configured" << std::endl;
                 return nlohmann::json::object();
             }
             
@@ -329,63 +328,82 @@ namespace lily {
             }
 
             web::http::client::http_client client(U("https://generativelanguage.googleapis.com"));
-            web::http::http_request request(web::http::methods::POST);
-
-            std::string url = "/v1beta/models/" + model + ":generateContent?key=" + api_key;
-            request.set_request_uri(web::uri(url));
-
-            // Build request
-            web::json::value request_json = web::json::value::object();
             
-            // Convert nlohmann::json contents to web::json::value
-            std::string contents_str = contents.dump();
-            
-            // This is a bit inefficient (json -> string -> json), but reliable for conversion
-            // since we don't have a direct nlohmann->cpprest converter helper exposed here.
-            // Using Parse implementation of cpprest
-            try {
-                request_json["contents"] = web::json::value::parse(utility::conversions::to_string_t(contents_str));
-            } catch (const std::exception& e) {
-                 std::cerr << "[GEMINI API] Error converting contents json: " << e.what() << std::endl;
-                 return nlohmann::json::object();
-            }
-
-            // Add tools to the request if available
-            if (!tools.empty()) {
-                web::json::value tools_json = web::json::value::array(tools.size());
-                for (size_t i = 0; i < tools.size(); i++) {
-                    tools_json[i] = convert_mcp_tool_to_gemini_format(tools[i]);
+            // Try each API key in round-robin with retry on rate limit
+            for (size_t retry = 0; retry < max_retries; retry++) {
+                // Get next API key using round-robin
+                std::string api_key = _config.getCurrentGeminiApiKey();
+                if (api_key.empty()) {
+                    std::cerr << "[GEMINI API] Warning: Empty API key encountered" << std::endl;
+                    continue;
                 }
-                request_json["tools"] = tools_json;
-                std::cout << "[GEMINI API] Sending request with " << tools.size() << " tools" << std::endl;
-            } else {
-                std::cout << "[GEMINI API] Sending request without tools" << std::endl;
-            }
+                
+                std::cout << "[GEMINI API] Using API key (ending with ..." << api_key.substr(api_key.length() - 4) << ")" << std::endl;
 
-            request.set_body(request_json);
+                web::http::http_request request(web::http::methods::POST);
+                std::string url = "/v1beta/models/" + model + ":generateContent?key=" + api_key;
+                request.set_request_uri(web::uri(url));
 
-            try {
-                std::cout << "[GEMINI API] Calling Gemini API..." << std::endl;
-                pplx::task<web::http::http_response> response_task = client.request(request);
-                response_task.wait();
-                web::http::http_response response = response_task.get();
+                // Build request
+                web::json::value request_json = web::json::value::object();
+                
+                // Convert nlohmann::json contents to web::json::value
+                std::string contents_str = contents.dump();
+                
+                try {
+                    request_json["contents"] = web::json::value::parse(utility::conversions::to_string_t(contents_str));
+                } catch (const std::exception& e) {
+                     std::cerr << "[GEMINI API] Error converting contents json: " << e.what() << std::endl;
+                     return nlohmann::json::object();
+                }
 
-                std::cout << "[GEMINI API] Response status: " << response.status_code() << std::endl;
-
-                if (response.status_code() == 200) {
-                    auto json_response = response.extract_json().get();
-                    std::string response_str = utility::conversions::to_utf8string(json_response.serialize());
-                    std::cout << "[GEMINI API] Successfully received response from Gemini" << std::endl;
-                    return nlohmann::json::parse(response_str);
+                // Add tools to the request if available
+                if (!tools.empty()) {
+                    web::json::value tools_json = web::json::value::array(tools.size());
+                    for (size_t i = 0; i < tools.size(); i++) {
+                        tools_json[i] = convert_mcp_tool_to_gemini_format(tools[i]);
+                    }
+                    request_json["tools"] = tools_json;
+                    std::cout << "[GEMINI API] Sending request with " << tools.size() << " tools" << std::endl;
                 } else {
-                    std::cerr << "[GEMINI API] Error: HTTP status " << response.status_code() << std::endl;
-                    auto error_body = response.extract_string().get();
-                    std::cerr << "[GEMINI API] Error response: " << error_body << std::endl;
+                    std::cout << "[GEMINI API] Sending request without tools" << std::endl;
                 }
-            } catch (const std::exception& e) {
-                std::cerr << "[GEMINI API] Error calling Gemini: " << e.what() << std::endl;
+
+                request.set_body(request_json);
+
+                try {
+                    std::cout << "[GEMINI API] Calling Gemini API (attempt " << (retry + 1) << "/" << max_retries << ")..." << std::endl;
+                    pplx::task<web::http::http_response> response_task = client.request(request);
+                    response_task.wait();
+                    web::http::http_response response = response_task.get();
+
+                    std::cout << "[GEMINI API] Response status: " << response.status_code() << std::endl;
+
+                    if (response.status_code() == 200) {
+                        auto json_response = response.extract_json().get();
+                        std::string response_str = utility::conversions::to_utf8string(json_response.serialize());
+                        std::cout << "[GEMINI API] Successfully received response from Gemini" << std::endl;
+                        return nlohmann::json::parse(response_str);
+                    } else if (response.status_code() == 429) {
+                        // Rate limit - try next key
+                        std::cerr << "[GEMINI API] Rate limited (429), trying next API key..." << std::endl;
+                        continue;
+                    } else {
+                        std::cerr << "[GEMINI API] Error: HTTP status " << response.status_code() << std::endl;
+                        auto error_body = response.extract_string().get();
+                        std::cerr << "[GEMINI API] Error response: " << error_body << std::endl;
+                        
+                        // For other errors, also try next key
+                        continue;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "[GEMINI API] Error calling Gemini: " << e.what() << std::endl;
+                    // Try next key on exception
+                    continue;
+                }
             }
 
+            std::cerr << "[GEMINI API] All API keys exhausted" << std::endl;
             return nlohmann::json::object();
         }
 

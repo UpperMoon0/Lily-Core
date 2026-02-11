@@ -18,14 +18,19 @@ namespace controller {
         if (!_config) return {{"error", "Config not initialized"}};
         
         nlohmann::json response;
-        std::string api_key = _config->getGeminiApiKey();
-        if (api_key.length() > 8) {
-            response["gemini_api_key"] = "..." + api_key.substr(api_key.length() - 4);
-        } else if (!api_key.empty()) {
-            response["gemini_api_key"] = "********";
-        } else {
-            response["gemini_api_key"] = "";
+        auto api_keys = _config->getGeminiApiKeys();
+        
+        // Return masked keys (last 4 characters) for display
+        nlohmann::json masked_keys = nlohmann::json::array();
+        for (const auto& key : api_keys) {
+            if (key.length() > 4) {
+                masked_keys.push_back("..." + key.substr(key.length() - 4));
+            } else {
+                masked_keys.push_back("****");
+            }
         }
+        response["gemini_api_keys"] = masked_keys;
+        response["gemini_api_key_count"] = api_keys.size();
         
         response["gemini_model"] = _config->getGeminiModel();
         response["gemini_system_prompt"] = _config->getGeminiSystemPrompt();
@@ -36,10 +41,21 @@ namespace controller {
         if (!_config) return {{"error", "Config not initialized"}};
         
         bool updated = false;
-        if (config.contains("gemini_api_key")) {
-            _config->setGeminiApiKey(config["gemini_api_key"]);
-            updated = true;
+        
+        // Handle multiple API keys
+        if (config.contains("gemini_api_keys") && config["gemini_api_keys"].is_array()) {
+            std::vector<std::string> keys;
+            for (const auto& key : config["gemini_api_keys"]) {
+                if (key.is_string()) {
+                    keys.push_back(key.get<std::string>());
+                }
+            }
+            if (!keys.empty()) {
+                _config->setGeminiApiKeys(keys);
+                updated = true;
+            }
         }
+        
         if (config.contains("gemini_model")) {
             _config->setGeminiModel(config["gemini_model"]);
             updated = true;

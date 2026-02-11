@@ -286,9 +286,11 @@ int main(int argc, char** argv) {
     service_connector.detach();
     
     // Check for Gemini API
-    bool gemini_available = !config.getGeminiApiKey().empty();
+    bool gemini_available = config.getGeminiApiKeyCount() > 0;
     if (!gemini_available) {
         std::cerr << "[Main] Warning: GEMINI_API_KEY not set. AI features will be disabled." << std::endl;
+    } else {
+        std::cout << "[Main] Gemini API: " << config.getGeminiApiKeyCount() << " API key(s) configured (round-robin enabled)" << std::endl;
     }
     
     // Start Unified Server (HTTP + WebSocket)
