@@ -9,16 +9,8 @@ namespace lily {
             std::string path = con->get_resource();
             std::string method = con->get_request().get_method();
             
-            con->append_header("Access-Control-Allow-Origin", "*");
-            con->append_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-            con->append_header("Access-Control-Allow-Headers", "Content-Type");
             con->append_header("Content-Type", "application/json");
             
-            if (method == "OPTIONS") {
-                con->set_status(websocketpp::http::status_code::ok);
-                return;
-            }
-
             // --- System Controller Routes ---
             if (_system_controller) {
                 if (method == "GET" && (path == "/api/health" || path == "/health")) {
