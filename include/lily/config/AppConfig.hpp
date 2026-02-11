@@ -5,7 +5,6 @@
 #include <vector>
 #include <memory>
 #include <mutex>
-#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -51,8 +50,8 @@ public:
     std::string gemini_model = "gemini-2.5-flash";
     std::string gemini_system_prompt = "You are Lily, a helpful AI assistant.";
     
-    // Round-robin index for API keys (atomic for thread-safe access)
-    mutable std::atomic<size_t> _current_key_index{0};
+    // Round-robin index for API keys
+    size_t _current_key_index = 0;
     
     // Config persistence
     std::string config_file_path;
@@ -126,7 +125,7 @@ public:
         return gemini_api_keys;
     }
     
-    std::string getCurrentGeminiApiKey() const {
+    std::string getCurrentGeminiApiKey() {
         std::lock_guard<std::mutex> lock(config_mutex.m);
         if (gemini_api_keys.empty()) {
             return "";
@@ -137,7 +136,7 @@ public:
         return gemini_api_keys[index];
     }
     
-    std::string peekNextGeminiApiKey() const {
+    std::string peekNextGeminiApiKey() {
         std::lock_guard<std::mutex> lock(config_mutex.m);
         if (gemini_api_keys.empty()) {
             return "";
@@ -176,7 +175,7 @@ public:
         _current_key_index = 0;
     }
     
-    size_t getGeminiApiKeyCount() const {
+    size_t getGeminiApiKeyCount() {
         std::lock_guard<std::mutex> lock(config_mutex.m);
         return gemini_api_keys.size();
     }
